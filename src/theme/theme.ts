@@ -15,7 +15,7 @@ import type { TextStyle, ViewStyle } from 'react-native';
  */
 
 /** Warm, calm palette derived from the product's Lovable references. */
-export const colors = {
+const colors = {
   /** Warm cream app background. */
   background: '#FAF8F5',
   /** Deep forest green — primary brand color. */
@@ -48,7 +48,7 @@ export const colors = {
  * `@expo-google-fonts` register when loaded, so they can be used directly
  * as `fontFamily` in a style once the fonts are ready.
  */
-export const fonts = {
+const fonts = {
   /** Elegant serif display face — used for headings / the priority hero. */
   serif: 'PlayfairDisplay_600SemiBold',
   serifBold: 'PlayfairDisplay_700Bold',
@@ -60,7 +60,7 @@ export const fonts = {
 } as const;
 
 /** Font size scale (in points). */
-export const fontSizes = {
+const fontSizes = {
   xs: 12,
   sm: 14,
   md: 16,
@@ -74,7 +74,7 @@ export const fontSizes = {
  * Named text styles. Headings use the serif display face; body and UI use
  * Inter. Components should prefer these presets over ad-hoc font settings.
  */
-export const typography = {
+const typography = {
   display: {
     fontFamily: fonts.serifBold,
     fontSize: fontSizes.display,
@@ -127,7 +127,7 @@ export const typography = {
 } as const;
 
 /** Spacing scale (in points). Use for padding, margins, and gaps. */
-export const spacing = {
+const spacing = {
   xs: 4,
   sm: 8,
   md: 12,
@@ -138,14 +138,14 @@ export const spacing = {
 } as const;
 
 /** Corner radii. */
-export const radii = {
+const radii = {
   chip: 999,
   button: 14,
   card: 20,
 } as const;
 
 /** Soft, diffuse shadow presets (iOS + Android elevation). */
-export const shadows = {
+const shadows = {
   soft: {
     shadowColor: '#2B2622',
     shadowOffset: { width: 0, height: 6 },
@@ -163,7 +163,7 @@ export const shadows = {
 } as const;
 
 /** The single theme object the rest of the app reads from. */
-export const theme = {
+const theme = {
   colors,
   fonts,
   fontSizes,
