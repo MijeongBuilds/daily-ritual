@@ -2,7 +2,7 @@
 
 A calm, guided **morning ritual** app built with [Expo](https://expo.dev) and React Native (TypeScript). It walks you through a short card flow each morning — set an intention, choose your one top priority, protect time for it on your calendar, and confirm — so the day starts with focus.
 
-This repository currently contains the first vertical slice's foundation: the app scaffold, a centralized design-token theme, and a mocked calendar service with pure free-gap-finding logic. The ritual screens are built on top of this in later features.
+This repository contains the first vertical slice: a centralized design-token theme, a mocked calendar service with pure free-gap-finding logic, and the four-step morning-ritual flow (Intention → Priority → Protect It → Confirm) built with [Expo Router](https://docs.expo.dev/router/introduction/).
 
 ## Requirements
 
@@ -32,8 +32,18 @@ npx expo start
 ## Project structure
 
 ```
-App.tsx                     App entry (ritual flow mounts here)
 src/
+  app/                      Expo Router routes (each file is a screen)
+    _layout.tsx             Root navigator + RitualProvider + font loading
+    index.tsx               Step 1 — Intention
+    priority.tsx            Step 2 — One top priority (the hero)
+    protect.tsx             Step 3 — Protect It (duration + calendar)
+    confirm.tsx             Step 4 — Confirm & save (mocked)
+  components/               Shared UI (ScreenScaffold, RitualHeader,
+                            BottomBar, Card, buttons, TextField,
+                            PriorityChip, DayCalendar)
+  ritual/                   RitualContext (intention, priority, duration,
+                            placed slot) + step count
   theme/
     theme.ts                Single source of truth for colors, fonts,
                             spacing, radii, and shadows. Nothing else in
