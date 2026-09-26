@@ -2,7 +2,9 @@
 
 A calm, guided **morning ritual** app built with [Expo](https://expo.dev) and React Native (TypeScript). It walks you through a short card flow each morning — set an intention, choose your one top priority, protect time for it on your calendar, and confirm — so the day starts with focus.
 
-This repository contains the first vertical slice: a centralized design-token theme, a mocked calendar service with pure free-gap-finding logic, and the four-step morning-ritual flow (Intention → Priority → Protect It → Confirm) built with [Expo Router](https://docs.expo.dev/router/introduction/).
+This repository contains the first vertical slice: a centralized design-token theme, a mocked calendar service with pure free-gap-finding logic, the four-step morning-ritual flow (Intention → Priority → Protect It → Confirm), and a **Today home** where the day plays out — all built with [Expo Router](https://docs.expo.dev/router/introduction/).
+
+After Confirm, the ritual lands on the **Today home**: it shows your intention, the protected focus block, and a standard timed day-view calendar (hour gutter on the left, events placed against the grid, a current-time "now" line). For your top priority you get two independent tools — a classic **25-minute Pomodoro timer** (simple start/stop that counts completed pomodoros) and a **Mark as done** control with an optional minutes-spent entry. A "Wrap up the day" button points to a placeholder evening-reflection screen (built next).
 
 ## Requirements
 
@@ -39,11 +41,17 @@ src/
     priority.tsx            Step 2 — One top priority (the hero)
     protect.tsx             Step 3 — Protect It (duration + calendar)
     confirm.tsx             Step 4 — Confirm & save (mocked)
+    today.tsx               Today home — intention, focus block, timed
+                            day calendar with a "now" line, Pomodoro
+                            timer + Mark-as-done for the top priority
+    reflection.tsx          Stub for the future evening "wrap up" screen
   components/               Shared UI (ScreenScaffold, RitualHeader,
                             BottomBar, Card, buttons, TextField,
-                            PriorityChip, DayCalendar)
+                            PriorityChip, DayCalendar, PomodoroTimer,
+                            MarkDoneControl)
   ritual/                   RitualContext (intention, priority, duration,
-                            placed slot) + step count
+                            placed slot, pomodoro count, done + minutes)
+                            + step count + pure Pomodoro helpers
   theme/
     theme.ts                Single source of truth for colors, fonts,
                             spacing, radii, and shadows. Nothing else in
@@ -65,8 +73,10 @@ This repository is a focused first vertical slice of the morning ritual. To keep
 - **Calendar is in-memory sample data.** There is no real calendar integration. A `MockCalendarService` returns a fixed set of sample events for today, hidden behind the `CalendarService` interface so a real backend can replace it later without touching the ritual screens.
 - **No Google OAuth and no backend.** Nothing signs in, and there is no server or database.
 - **No notifications.**
-- **Saving a focus block is simulated.** The "Confirm" step does not write to any real calendar; it just completes the flow.
-- **Out of scope:** the evening ritual, the "today home" screen, and minor / secondary priorities. This slice covers only the four-step morning flow: Intention → Priority → Protect It → Confirm.
+- **Saving a focus block is simulated.** The "Confirm" step does not write to any real calendar; it just completes the flow and lands on the Today home.
+- **Ritual state is in-memory.** The Today home reads the intention, priority, focus block, Pomodoro count, and done/minutes from an in-memory context — nothing is persisted across app restarts in this slice.
+- **The evening reflection is a stub.** "Wrap up the day" opens a placeholder screen only; the real evening reflection is a separate build.
+- **Out of scope:** the evening reflection screen itself, Google OAuth / real Google Calendar / a backend, settings, notifications, and minor / secondary priorities.
 
 ## Architecture
 

@@ -24,6 +24,21 @@ export interface RitualState {
    * slot has been chosen yet.
    */
   placedSlotStart: Date | null;
+  /**
+   * Count of completed 25-minute pomodoros the user has run against the top
+   * priority on the Today home. Independent of {@link markedDone}.
+   */
+  pomodoroCount: number;
+  /**
+   * Whether the user has explicitly marked the top priority as done on the
+   * Today home. Independent of the pomodoro timer.
+   */
+  markedDone: boolean;
+  /**
+   * Optional minutes the user recorded when marking the priority done, or
+   * `null` if they did not enter a value.
+   */
+  timeSpentMinutes: number | null;
 }
 
 /** The default state when the ritual begins. */
@@ -32,6 +47,9 @@ export const initialRitualState: RitualState = {
   priorityTitle: '',
   durationMinutes: 50,
   placedSlotStart: null,
+  pomodoroCount: 0,
+  markedDone: false,
+  timeSpentMinutes: null,
 };
 
 type RitualAction =
@@ -39,6 +57,8 @@ type RitualAction =
   | { type: 'setPriorityTitle'; value: string }
   | { type: 'setDurationMinutes'; value: number }
   | { type: 'setPlacedSlotStart'; value: Date | null }
+  | { type: 'incrementPomodoro' }
+  | { type: 'setMarkedDone'; done: boolean; minutes: number | null }
   | { type: 'reset' };
 
 function ritualReducer(
@@ -54,6 +74,14 @@ function ritualReducer(
       return { ...state, durationMinutes: action.value };
     case 'setPlacedSlotStart':
       return { ...state, placedSlotStart: action.value };
+    case 'incrementPomodoro':
+      return { ...state, pomodoroCount: state.pomodoroCount + 1 };
+    case 'setMarkedDone':
+      return {
+        ...state,
+        markedDone: action.done,
+        timeSpentMinutes: action.done ? action.minutes : null,
+      };
     case 'reset':
       return initialRitualState;
     default:
@@ -66,6 +94,10 @@ export interface RitualContextValue extends RitualState {
   setPriorityTitle: (value: string) => void;
   setDurationMinutes: (value: number) => void;
   setPlacedSlotStart: (value: Date | null) => void;
+  /** Record one completed pomodoro against the top priority. */
+  incrementPomodoro: () => void;
+  /** Mark (or unmark) the priority done, with optional minutes spent. */
+  setMarkedDone: (done: boolean, minutes: number | null) => void;
   reset: () => void;
 }
 
@@ -88,6 +120,9 @@ export function RitualProvider({
         dispatch({ type: 'setDurationMinutes', value: v }),
       setPlacedSlotStart: (v) =>
         dispatch({ type: 'setPlacedSlotStart', value: v }),
+      incrementPomodoro: () => dispatch({ type: 'incrementPomodoro' }),
+      setMarkedDone: (done, minutes) =>
+        dispatch({ type: 'setMarkedDone', done, minutes }),
       reset: () => dispatch({ type: 'reset' }),
     }),
     [state],

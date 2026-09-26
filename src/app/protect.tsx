@@ -1,6 +1,16 @@
 import { useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  InputAccessoryView,
+  Keyboard,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 
 import {
   DAY_END_HOUR,
@@ -18,6 +28,8 @@ import { TOTAL_STEPS } from '../ritual/steps';
 import theme from '../theme/theme';
 
 const DEFAULT_DURATION = 50;
+/** ID that ties the numeric field to its "Done" keyboard accessory (iOS). */
+const DURATION_ACCESSORY_ID = 'protect-duration-accessory';
 
 function dayBounds(day: Date): { start: Date; end: Date } {
   const start = new Date(day);
@@ -91,6 +103,9 @@ export default function ProtectScreen(): React.ReactElement {
   }
 
   function handlePlaceSlot(start: Date): void {
+    // Placing a slot means the user is done typing the duration — put the
+    // keyboard away so the calendar is fully visible.
+    Keyboard.dismiss();
     // If the field was left blank/zero, commit the effective (default)
     // duration so the placed block and the Confirm preview stay consistent.
     if (durationMinutes !== effectiveDuration) {
@@ -112,7 +127,11 @@ export default function ProtectScreen(): React.ReactElement {
         continueDisabled: placedSlotStart == null,
       }}
     >
-      <View style={styles.pinned}>
+      <Pressable
+        style={styles.pinned}
+        onPress={Keyboard.dismiss}
+        accessibilityRole="none"
+      >
         <PriorityChip title={priorityTitle} />
 
         <View style={styles.durationRow}>
@@ -130,6 +149,11 @@ export default function ProtectScreen(): React.ReactElement {
               placeholder={String(DEFAULT_DURATION)}
               style={styles.durationInput}
               maxLength={4}
+              returnKeyType="done"
+              onSubmitEditing={Keyboard.dismiss}
+              inputAccessoryViewID={
+                Platform.OS === 'ios' ? DURATION_ACCESSORY_ID : undefined
+              }
             />
             <Text style={styles.minLabel}>min</Text>
           </View>
@@ -153,12 +177,14 @@ export default function ProtectScreen(): React.ReactElement {
             your block. Overlap is okay — it&apos;s your call.
           </Text>
         )}
-      </View>
+      </Pressable>
 
       <ScrollView
         style={styles.calendarScroll}
         contentContainerStyle={styles.calendarContent}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
       >
         {loading ? (
           <Text style={styles.helper}>Loading your day…</Text>
@@ -174,6 +200,26 @@ export default function ProtectScreen(): React.ReactElement {
           />
         )}
       </ScrollView>
+
+      {/*
+        The number pad has no return key, so give iOS a "Done" accessory bar
+        to dismiss the keyboard and reveal the calendar again. (Android's
+        number-pad dismisses via the system Back button / tapping outside.)
+      */}
+      {Platform.OS === 'ios' && (
+        <InputAccessoryView nativeID={DURATION_ACCESSORY_ID}>
+          <View style={styles.accessory}>
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Done editing minutes"
+              onPress={Keyboard.dismiss}
+              style={styles.accessoryButton}
+            >
+              <Text style={styles.accessoryText}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        </InputAccessoryView>
+      )}
     </ScreenScaffold>
   );
 }
@@ -226,5 +272,22 @@ const styles = StyleSheet.create({
   },
   calendarContent: {
     paddingVertical: theme.spacing.sm,
+  },
+  accessory: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    backgroundColor: theme.colors.card,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: theme.colors.border,
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.sm,
+  },
+  accessoryButton: {
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.xs,
+  },
+  accessoryText: {
+    ...theme.typography.button,
+    color: theme.colors.primary,
   },
 });

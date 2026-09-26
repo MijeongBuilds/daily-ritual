@@ -50,12 +50,15 @@ export default function ConfirmScreen(): React.ReactElement {
       bottomBar={{
         continueLabel: saved ? 'Done' : 'Protect it',
         onContinue: () => {
-          if (!saved) {
+          if (saved) {
+            // The ritual is set — move on to the Today home, the day's hub.
+            router.replace('/today');
+          } else {
             void handleSave();
           }
         },
         onBack: saved ? undefined : () => router.back(),
-        continueDisabled: start == null || saved,
+        continueDisabled: start == null,
         continueLoading: saving,
       }}
     >
@@ -90,7 +93,8 @@ export default function ConfirmScreen(): React.ReactElement {
 
         {saved && (
           <Text style={styles.savedNote}>
-            Added to your calendar (mocked for this preview).
+            Added to your calendar (mocked for this preview). Tap Done to see
+            your day.
           </Text>
         )}
       </View>
