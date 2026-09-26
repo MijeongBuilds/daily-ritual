@@ -65,15 +65,21 @@ export default function ProtectScreen(): React.ReactElement {
 
   const day = useMemo(() => new Date(), []);
 
+  // When the field is blank/zero, fall back to the default so gap-finding and
+  // block placement keep working instead of dropping into a silent dead state.
+  const effectiveDuration =
+    durationMinutes > 0 ? durationMinutes : DEFAULT_DURATION;
+  const durationIsBlank = durationText.trim() === '' || durationMinutes <= 0;
+
   const fittingGaps: TimeGap[] = useMemo(() => {
-    if (loading || durationMinutes <= 0) {
+    if (loading) {
       return [];
     }
     const { start, end } = dayBounds(day);
-    return findFreeGaps(events, start, end, durationMinutes);
-  }, [events, durationMinutes, loading, day]);
+    return findFreeGaps(events, start, end, effectiveDuration);
+  }, [events, effectiveDuration, loading, day]);
 
-  const noFit = !loading && durationMinutes > 0 && fittingGaps.length === 0;
+  const noFit = !loading && fittingGaps.length === 0;
 
   function handleDurationChange(text: string): void {
     const cleaned = text.replace(/[^0-9]/g, '');
@@ -85,6 +91,12 @@ export default function ProtectScreen(): React.ReactElement {
   }
 
   function handlePlaceSlot(start: Date): void {
+    // If the field was left blank/zero, commit the effective (default)
+    // duration so the placed block and the Confirm preview stay consistent.
+    if (durationMinutes !== effectiveDuration) {
+      setDurationMinutes(effectiveDuration);
+      setDurationText(String(effectiveDuration));
+    }
     setPlacedSlotStart(start);
   }
 
@@ -123,16 +135,22 @@ export default function ProtectScreen(): React.ReactElement {
           </View>
         </View>
 
-        {noFit && (
-          <Text style={styles.noFit}>
-            Your day&apos;s full — shorten the block, move something, or protect
-            it anyway.
+        {durationIsBlank && !loading && (
+          <Text style={styles.helper}>
+            Enter a number of minutes to protect (defaulting to{' '}
+            {DEFAULT_DURATION}).
           </Text>
         )}
-        {!noFit && !loading && (
+        {!durationIsBlank && noFit && (
+          <Text style={styles.noFit}>
+            Your day&apos;s full — shorten the block, move something, or tap the
+            timeline to protect it anyway.
+          </Text>
+        )}
+        {!durationIsBlank && !noFit && !loading && (
           <Text style={styles.helper}>
-            Tap a highlighted slot to protect your priority. Overlap is okay —
-            it&apos;s your call.
+            Tap a highlighted slot, or tap anywhere on the timeline to place
+            your block. Overlap is okay — it&apos;s your call.
           </Text>
         )}
       </View>
@@ -150,7 +168,7 @@ export default function ProtectScreen(): React.ReactElement {
             fittingGaps={fittingGaps}
             day={day}
             placedStart={placedSlotStart}
-            placedDurationMinutes={durationMinutes}
+            placedDurationMinutes={effectiveDuration}
             priorityTitle={priorityTitle}
             onPlaceSlot={handlePlaceSlot}
           />

@@ -111,7 +111,7 @@ const typography = {
     lineHeight: 20,
     color: colors.onPrimary,
   } as TextStyle,
-  /** Small uppercase step label, e.g. "2 OF 6". */
+  /** Small uppercase step label, e.g. "STEP 2 OF 4". */
   label: {
     fontFamily: fonts.sansMedium,
     fontSize: fontSizes.xs,
