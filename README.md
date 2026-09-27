@@ -1,10 +1,12 @@
 # Daily Ritual
 
-A calm, guided **morning ritual** app built with [Expo](https://expo.dev) and React Native (TypeScript). It walks you through a short card flow each morning — set an intention, choose your one top priority, protect time for it on your calendar, and confirm — so the day starts with focus.
+A calm, guided **morning ritual** app built with [Expo](https://expo.dev) and React Native (TypeScript). It walks you through a short card flow each morning — set an intention, choose your one top priority, and protect time for it on your calendar — so the day starts with focus.
 
-This repository contains the first vertical slice: a centralized design-token theme, a mocked calendar service with pure free-gap-finding logic, the four-step morning-ritual flow (Intention → Priority → Protect It → Confirm), and a **Today home** where the day plays out — all built with [Expo Router](https://docs.expo.dev/router/introduction/).
+This repository contains the first vertical slice: a centralized design-token theme, a mocked calendar service with pure free-gap-finding logic, the three-step morning-ritual flow (Intention → Priority → Protect It), and a **Today home** where the day plays out — all built with [Expo Router](https://docs.expo.dev/router/introduction/).
 
-After Confirm, the ritual lands on the **Today home**: it shows your intention, the protected focus block, and a standard timed day-view calendar (hour gutter on the left, events placed against the grid, a current-time "now" line). For your top priority you get two independent tools — a classic **25-minute Pomodoro timer** (simple start/stop that counts completed pomodoros) and a **Mark as done** control with an optional minutes-spent entry. A "Wrap up the day" button points to a placeholder evening-reflection screen (built next).
+On **Protect It** you set the number of minutes to protect and either tap a highlighted free gap (at the exact time you want to start), tap anywhere on the timeline to place a block, or tap an **existing calendar event** to designate that event as your priority's protected time (no new block is created). Tapping your placed block again removes it. Saving lands you directly on the **Today home** (there is no separate confirm screen).
+
+The **Today home** shows your intention at the very top, then your one priority, then a standard timed day-view calendar (hour gutter on the left, events placed against the grid, a current-time "now" line). On the focus block you get two actions: a **Done** checkbox (which opens an optional hours/minutes popup to log the actual time it took) and a **Start** button that opens a **count-up focus timer**. The timer counts up from 0:00 (showing the aimed-for goal for reference), supports pause/resume and stop; on stop it asks whether you accomplished the task — "yes" logs the actual time, "not yet" captures a reflection note that is surfaced back on the Today home. A "Wrap up the day" button points to a placeholder evening-reflection screen (built next).
 
 ## Requirements
 
@@ -39,19 +41,21 @@ src/
     _layout.tsx             Root navigator + RitualProvider + font loading
     index.tsx               Step 1 — Intention
     priority.tsx            Step 2 — One top priority (the hero)
-    protect.tsx             Step 3 — Protect It (duration + calendar)
-    confirm.tsx             Step 4 — Confirm & save (mocked)
-    today.tsx               Today home — intention, focus block, timed
-                            day calendar with a "now" line, Pomodoro
-                            timer + Mark-as-done for the top priority
+    protect.tsx             Step 3 — Protect It (duration + calendar;
+                            saves and goes straight to the Today home)
+    today.tsx               Today home — intention, priority, timed day
+                            calendar with a "now" line, Done checkbox +
+                            Start (count-up timer) for the focus block
+    timer.tsx               Count-up focus timer (start/pause/stop,
+                            accomplished? → log time or save a note)
     reflection.tsx          Stub for the future evening "wrap up" screen
   components/               Shared UI (ScreenScaffold, RitualHeader,
                             BottomBar, Card, buttons, TextField,
-                            PriorityChip, DayCalendar, PomodoroTimer,
-                            MarkDoneControl)
+                            PriorityChip, DayCalendar, FocusBlockActions)
   ritual/                   RitualContext (intention, priority, duration,
-                            placed slot, pomodoro count, done + minutes)
-                            + step count + pure Pomodoro helpers
+                            placed block OR chosen existing event, done +
+                            minutes, reflection notes) + step count +
+                            pure count-up timer helpers
   theme/
     theme.ts                Single source of truth for colors, fonts,
                             spacing, radii, and shadows. Nothing else in
@@ -73,10 +77,10 @@ This repository is a focused first vertical slice of the morning ritual. To keep
 - **Calendar is in-memory sample data.** There is no real calendar integration. A `MockCalendarService` returns a fixed set of sample events for today, hidden behind the `CalendarService` interface so a real backend can replace it later without touching the ritual screens.
 - **No Google OAuth and no backend.** Nothing signs in, and there is no server or database.
 - **No notifications.**
-- **Saving a focus block is simulated.** The "Confirm" step does not write to any real calendar; it just completes the flow and lands on the Today home.
-- **Ritual state is in-memory.** The Today home reads the intention, priority, focus block, Pomodoro count, and done/minutes from an in-memory context — nothing is persisted across app restarts in this slice.
-- **The evening reflection is a stub.** "Wrap up the day" opens a placeholder screen only; the real evening reflection is a separate build.
-- **Out of scope:** the evening reflection screen itself, Google OAuth / real Google Calendar / a backend, settings, notifications, and minor / secondary priorities.
+- **Saving a focus block is simulated.** "Protect It" does not write to any real calendar; it just completes the flow and lands on the Today home. (Choosing an existing event creates nothing — it only records which event is your protected time.)
+- **Ritual state is in-memory.** The Today home reads the intention, priority, protected time, done/minutes, and any reflection notes from an in-memory context — nothing is persisted across app restarts in this slice.
+- **The evening reflection is a stub.** Reflection notes captured from the timer are surfaced simply on the Today home so nothing is lost, but the full evening reflection experience (the wrap-up ritual, a "this week" screen, reminders) is a separate build. "Wrap up the day" opens a placeholder screen only.
+- **Out of scope:** the full evening reflection experience, Google OAuth / real Google Calendar / a backend, settings, notifications, and minor / secondary priorities.
 
 ## Architecture
 

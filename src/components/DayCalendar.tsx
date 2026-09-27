@@ -58,11 +58,26 @@ export interface DayCalendarProps {
   placedDurationMinutes?: number;
   priorityTitle?: string;
   /**
+   * The id of an existing event the user has designated as their protected
+   * time. When set, that event renders distinctly (as the protected block).
+   */
+  selectedEventId?: string | null;
+  /**
    * Called with the start Date of a tapped highlighted gap or timeline tap.
    * When omitted the calendar is read-only (used on the Today home) — no gaps
    * are tappable and the timeline does not respond to taps.
    */
   onPlaceSlot?: (start: Date) => void;
+  /**
+   * Called when the user taps the currently-placed focus block to UN-SELECT
+   * it (clear the placement). Only wired when interactive.
+   */
+  onClearPlaced?: () => void;
+  /**
+   * Called when the user taps an existing calendar event, to designate it as
+   * their protected top-priority time. Only wired when interactive.
+   */
+  onSelectEvent?: (event: CalendarEvent) => void;
   /**
    * Show a horizontal "now" indicator line at the current time (used on the
    * Today home). Defaults to false.
@@ -99,16 +114,43 @@ export function timeForOffset(
 }
 
 /**
+ * Given a tap Y-position INSIDE a free gap (px from the gap's own top), return
+ * the snapped start time for a block placed at that point, clamped so the
+ * block stays within the gap. This lets the user drop a 30-min block at, say,
+ * 10:00 inside a 9:30–11:00 gap instead of always snapping to the gap start.
+ */
+export function startWithinGap(
+  gap: TimeGap,
+  tapOffsetInGapPx: number,
+  durationMinutes: number,
+  base: Date,
+): Date {
+  const gapStartMin = (gap.start.getTime() - base.getTime()) / 60_000;
+  const tapMin = tapOffsetInGapPx / PIXELS_PER_MINUTE;
+  const rawMin = gapStartMin + tapMin;
+  const snapped = Math.round(rawMin / SNAP_MINUTES) * SNAP_MINUTES;
+  // Keep the block fully inside the gap: no earlier than the gap start, no
+  // later than (gap end - duration).
+  const gapEndMin = (gap.end.getTime() - base.getTime()) / 60_000;
+  const latestStart = Math.max(gapStartMin, gapEndMin - durationMinutes);
+  const clampedMin = Math.min(Math.max(snapped, gapStartMin), latestStart);
+  const start = new Date(base.getTime() + clampedMin * 60_000);
+  return clampStartToTimeline(start, durationMinutes, base);
+}
+
+/**
  * A standard day-view calendar (Google-Calendar mobile style): an HOUR GUTTER
  * on the LEFT with hour labels (8 AM, 9 AM, ...) and an event lane on the
  * right where events and free-gap slots are positioned against the hour grid
  * by their start/end times.
  *
  * When `onPlaceSlot` is provided the calendar is INTERACTIVE (used on the
- * Protect It screen): fitting gaps highlight as tappable slots and tapping
- * anywhere on the timeline places the focus block (overlap allowed). When it
- * is omitted the calendar is READ-ONLY (used on the Today home) and can show a
- * "now" indicator line via `showNowIndicator`.
+ * Protect It screen): fitting gaps highlight as tappable slots (tap at the
+ * point you want the block), tapping anywhere on the timeline places the
+ * focus block (overlap allowed), tapping the placed block again clears it,
+ * and tapping an existing event designates it as the protected time. When
+ * `onPlaceSlot` is omitted the calendar is READ-ONLY (used on the Today home)
+ * and can show a "now" indicator line via `showNowIndicator`.
  */
 export function DayCalendar({
   events,
@@ -117,7 +159,10 @@ export function DayCalendar({
   placedStart = null,
   placedDurationMinutes = 0,
   priorityTitle = '',
+  selectedEventId = null,
   onPlaceSlot,
+  onClearPlaced,
+  onSelectEvent,
   showNowIndicator = false,
 }: DayCalendarProps): React.ReactElement {
   const base = dayStartDate(day);
@@ -160,9 +205,9 @@ export function DayCalendar({
     if (onPlaceSlot == null) {
       return;
     }
-    // Center the block on the tap point, then clamp to the visible window.
-    const y =
-      e.nativeEvent.locationY - (placedDurationMinutes * PIXELS_PER_MINUTE) / 2;
+    // Place the block so it STARTS at the tapped time (snapped), then clamp to
+    // the visible window.
+    const y = e.nativeEvent.locationY;
     onPlaceSlot(timeForOffset(y, placedDurationMinutes, base));
   }
 
@@ -174,7 +219,7 @@ export function DayCalendar({
         return <View key={`line-${h}`} style={[styles.hourLine, { top }]} />;
       })}
 
-      {/* Highlighted fitting gaps (tappable) */}
+      {/* Highlighted fitting gaps (tappable — place at the tapped point) */}
       {fittingGaps.map((gap, idx) => {
         const top = offsetForTime(gap.start, base);
         const height = Math.max(gap.durationMinutes * PIXELS_PER_MINUTE, 24);
@@ -185,12 +230,18 @@ export function DayCalendar({
             accessibilityLabel={`Free slot ${formatTimeRange(
               gap.start,
               gap.end,
-            )}. Tap to place your priority here.`}
+            )}. Tap where you want your priority to start.`}
             onPress={(e) => {
-              // Suggested easy path: snap to the free gap's start.
+              // Place the block at the tapped point WITHIN the gap so the user
+              // can pick, e.g., 10:00 inside a 9:30–11:00 gap.
               e.stopPropagation();
               onPlaceSlot?.(
-                clampStartToTimeline(gap.start, placedDurationMinutes, base),
+                startWithinGap(
+                  gap,
+                  e.nativeEvent.locationY,
+                  placedDurationMinutes,
+                  base,
+                ),
               );
             }}
             style={[styles.gap, { top, height }]}
@@ -202,47 +253,95 @@ export function DayCalendar({
         );
       })}
 
-      {/* Existing events */}
+      {/* Existing events (tappable when interactive: designate as protected) */}
       {events.map((event) => {
         const top = offsetForTime(event.start, base);
         const height = Math.max(offsetForTime(event.end, base) - top, 22);
-        return (
-          <View
-            key={event.id}
-            pointerEvents="none"
-            style={[
-              styles.event,
-              {
-                top,
-                height,
-                backgroundColor: event.color ?? theme.colors.textMuted,
-              },
-            ]}
-          >
+        const isSelected = selectedEventId != null && event.id === selectedEventId;
+        const eventStyle = [
+          styles.event,
+          {
+            top,
+            height,
+            backgroundColor: isSelected
+              ? theme.colors.accent
+              : event.color ?? theme.colors.textMuted,
+          },
+          isSelected && styles.eventSelected,
+        ];
+        const body = (
+          <>
             <Text style={styles.eventTitle} numberOfLines={1}>
-              {event.title}
+              {isSelected ? `★ ${event.title}` : event.title}
             </Text>
             <Text style={styles.eventTime} numberOfLines={1}>
               {formatTimeRange(event.start, event.end)}
             </Text>
+          </>
+        );
+        if (interactive && onSelectEvent != null) {
+          return (
+            <Pressable
+              key={event.id}
+              accessibilityRole="button"
+              accessibilityLabel={`${event.title}, ${formatTimeRange(
+                event.start,
+                event.end,
+              )}. Tap to use this event as your protected focus time.`}
+              onPress={(e) => {
+                e.stopPropagation();
+                onSelectEvent(event);
+              }}
+              style={eventStyle}
+            >
+              {body}
+            </Pressable>
+          );
+        }
+        return (
+          <View key={event.id} pointerEvents="none" style={eventStyle}>
+            {body}
           </View>
         );
       })}
 
-      {/* Placed focus block (accent, may overlap) — clamped to the window */}
-      {placedStart != null && placedEnd != null && (
-        <View
-          pointerEvents="none"
-          style={[styles.placed, { top: placedTop, height: placedHeight }]}
-        >
-          <Text style={styles.placedTitle} numberOfLines={1}>
-            {priorityTitle || 'Focus block'}
-          </Text>
-          <Text style={styles.placedTime} numberOfLines={1}>
-            {formatTimeRange(placedStart, placedEnd)}
-          </Text>
-        </View>
-      )}
+      {/* Placed focus block (accent, may overlap) — clamped to the window.
+          When interactive, tapping it again clears the placement. */}
+      {placedStart != null &&
+        placedEnd != null &&
+        (interactive && onClearPlaced != null ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Focus block ${formatTimeRange(
+              placedStart,
+              placedEnd,
+            )}. Tap to remove it.`}
+            onPress={(e) => {
+              e.stopPropagation();
+              onClearPlaced();
+            }}
+            style={[styles.placed, { top: placedTop, height: placedHeight }]}
+          >
+            <Text style={styles.placedTitle} numberOfLines={1}>
+              {priorityTitle || 'Focus block'}
+            </Text>
+            <Text style={styles.placedTime} numberOfLines={1}>
+              {`${formatTimeRange(placedStart, placedEnd)} · tap to remove`}
+            </Text>
+          </Pressable>
+        ) : (
+          <View
+            pointerEvents="none"
+            style={[styles.placed, { top: placedTop, height: placedHeight }]}
+          >
+            <Text style={styles.placedTitle} numberOfLines={1}>
+              {priorityTitle || 'Focus block'}
+            </Text>
+            <Text style={styles.placedTime} numberOfLines={1}>
+              {formatTimeRange(placedStart, placedEnd)}
+            </Text>
+          </View>
+        ))}
 
       {/* Current-time "now" indicator */}
       {nowVisible && (
@@ -279,7 +378,7 @@ export function DayCalendar({
           style={[styles.lane, { height: TIMELINE_HEIGHT }]}
           onPress={handleTimelinePress}
           accessibilityRole="adjustable"
-          accessibilityLabel="Day timeline. Tap anywhere to place your focus block at that time. Overlap is allowed."
+          accessibilityLabel="Day timeline. Tap anywhere to place your focus block starting at that time. Overlap is allowed."
         >
           {timelineBody}
         </Pressable>
@@ -348,6 +447,12 @@ const styles = StyleSheet.create({
     paddingVertical: theme.spacing.xs,
     justifyContent: 'center',
     opacity: 0.85,
+  },
+  eventSelected: {
+    opacity: 1,
+    borderWidth: 2,
+    borderColor: theme.colors.primaryDark,
+    ...theme.shadows.soft,
   },
   eventTitle: {
     ...theme.typography.caption,

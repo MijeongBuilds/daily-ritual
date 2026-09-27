@@ -30,7 +30,7 @@ export default function IntentionScreen(): React.ReactElement {
         <TextField
           value={intention}
           onChangeText={setIntention}
-          placeholder="Today I want to..."
+          placeholder="Today, I intend to..."
           multiline
           style={styles.input}
         />

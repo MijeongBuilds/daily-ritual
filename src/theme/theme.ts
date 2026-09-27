@@ -41,6 +41,8 @@ const colors = {
   highlight: '#DCE8DE',
   /** A slightly stronger border for a highlighted (fitting) gap. */
   highlightBorder: '#9CBBA4',
+  /** Dimming overlay behind modals (warm near-black at low opacity). */
+  overlay: 'rgba(43, 38, 34, 0.45)',
 } as const;
 
 /**

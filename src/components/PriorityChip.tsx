@@ -9,7 +9,7 @@ export interface PriorityChipProps {
 
 /**
  * The persistent hero element that pins the user's one top priority to the
- * top of the Protect It and Confirm screens, so it stays front-of-mind.
+ * top of the Protect It screen, so it stays front-of-mind.
  */
 export function PriorityChip({ title }: PriorityChipProps): React.ReactElement {
   return (

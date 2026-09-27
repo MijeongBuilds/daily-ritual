@@ -1,13 +1,12 @@
 import { useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Card } from '../components/Card';
 import { DayCalendar } from '../components/DayCalendar';
+import { FocusBlockActions } from '../components/FocusBlockActions';
 import { formatTimeRange } from '../components/formatTime';
-import { MarkDoneControl } from '../components/MarkDoneControl';
-import { PomodoroTimer } from '../components/PomodoroTimer';
 import { SecondaryButton } from '../components/SecondaryButton';
 import { mockCalendarService } from '../services/calendar/MockCalendarService';
 import type { CalendarEvent } from '../services/calendar/types';
@@ -15,11 +14,15 @@ import { useRitual } from '../ritual/RitualContext';
 import theme from '../theme/theme';
 
 /**
- * The Today home: the destination for the morning ritual's final "Done". It
- * surfaces the day's intention, the protected focus block, a timed day-view
- * calendar with a current-time indicator, and — for the top priority — two
- * independent tools (a classic pomodoro timer and a "mark as done" control).
- * A stub entry point points toward the future evening reflection.
+ * The Today home: the destination for the morning ritual's final "Protect it".
+ * Layout (top → bottom):
+ *   1. Today's INTENTION, prominent.
+ *   2. The TOP PRIORITY.
+ *   3. The timed day-view calendar with a current-time "now" line. The focus
+ *      block gets two actions — a "Done" checkbox (with an optional
+ *      hours/minutes popup) and a "Start" button that opens the count-up timer.
+ * Any reflection notes captured from the timer are surfaced simply at the
+ * bottom so nothing is lost, alongside the evening-reflection stub.
  */
 export default function TodayScreen(): React.ReactElement {
   const router = useRouter();
@@ -29,10 +32,13 @@ export default function TodayScreen(): React.ReactElement {
     priorityTitle,
     durationMinutes,
     placedSlotStart,
-    pomodoroCount,
+    protectMode,
+    existingEventId,
+    existingEventStart,
+    existingEventEnd,
     markedDone,
     timeSpentMinutes,
-    incrementPomodoro,
+    reflections,
     setMarkedDone,
   } = useRitual();
 
@@ -61,10 +67,17 @@ export default function TodayScreen(): React.ReactElement {
 
   const now = useMemo(() => new Date(), []);
 
+  // Resolve the protected window from whichever mode is active.
+  const focusStart =
+    protectMode === 'existing-event' ? existingEventStart : placedSlotStart;
   const focusEnd =
-    placedSlotStart != null
-      ? new Date(placedSlotStart.getTime() + durationMinutes * 60_000)
-      : null;
+    protectMode === 'existing-event'
+      ? existingEventEnd
+      : placedSlotStart != null
+        ? new Date(placedSlotStart.getTime() + durationMinutes * 60_000)
+        : null;
+
+  const hasFocus = focusStart != null && focusEnd != null;
 
   return (
     <ScrollView
@@ -78,41 +91,36 @@ export default function TodayScreen(): React.ReactElement {
       ]}
       showsVerticalScrollIndicator={false}
     >
-      <Text style={styles.eyebrow}>TODAY</Text>
+      {/* 1. Today's intention — prominent, at the very top. */}
+      <Text style={styles.eyebrow}>TODAY&apos;S INTENTION</Text>
       <Text style={styles.heading}>
         {intention.trim().length > 0 ? intention : 'Your day, protected.'}
       </Text>
 
-      {/* Focus block summary */}
+      {/* 2. The top priority. */}
       <Card style={styles.focusCard}>
-        <Text style={styles.cardLabel}>YOUR FOCUS BLOCK</Text>
+        <Text style={styles.cardLabel}>YOUR ONE PRIORITY</Text>
         <Text style={styles.focusTitle}>
           {priorityTitle.trim().length > 0 ? priorityTitle : 'Your priority'}
         </Text>
         <Text style={styles.focusWhen}>
-          {placedSlotStart != null && focusEnd != null
-            ? formatTimeRange(placedSlotStart, focusEnd)
+          {hasFocus && focusStart != null && focusEnd != null
+            ? formatTimeRange(focusStart, focusEnd)
             : 'No time protected yet'}
         </Text>
+
+        {/* Focus-block actions: Done checkbox (+ optional time) and Start. */}
+        <View style={styles.actions}>
+          <FocusBlockActions
+            done={markedDone}
+            timeSpentMinutes={timeSpentMinutes}
+            onChangeDone={setMarkedDone}
+            onStart={() => router.push('/timer')}
+          />
+        </View>
       </Card>
 
-      {/* Two independent tools for the top priority */}
-      <Card style={styles.toolCard}>
-        <PomodoroTimer
-          completedCount={pomodoroCount}
-          onComplete={incrementPomodoro}
-        />
-      </Card>
-
-      <Card style={styles.toolCard}>
-        <MarkDoneControl
-          done={markedDone}
-          timeSpentMinutes={timeSpentMinutes}
-          onChange={setMarkedDone}
-        />
-      </Card>
-
-      {/* Timed day-view calendar with a current-time indicator */}
+      {/* 3. Timed day-view calendar with a current-time indicator. */}
       <Text style={styles.sectionLabel}>Your day</Text>
       {loading ? (
         <Text style={styles.loading}>Loading your day…</Text>
@@ -120,14 +128,30 @@ export default function TodayScreen(): React.ReactElement {
         <DayCalendar
           events={events}
           day={now}
-          placedStart={placedSlotStart}
+          placedStart={protectMode === 'new-block' ? placedSlotStart : null}
           placedDurationMinutes={durationMinutes}
           priorityTitle={priorityTitle}
+          selectedEventId={
+            protectMode === 'existing-event' ? existingEventId : null
+          }
           showNowIndicator
         />
       )}
 
-      {/* Stub entry point toward the future evening reflection */}
+      {/* Reflections captured when a task was not accomplished. */}
+      {reflections.length > 0 && (
+        <View style={styles.reflections}>
+          <Text style={styles.sectionLabel}>Reflections</Text>
+          {reflections.map((r) => (
+            <Card key={r.createdAt} style={styles.reflectionCard}>
+              <Text style={styles.reflectionPriority}>{r.priorityTitle}</Text>
+              <Text style={styles.reflectionNote}>{r.note}</Text>
+            </Card>
+          ))}
+        </View>
+      )}
+
+      {/* Stub entry point toward the future evening reflection. */}
       <SecondaryButton
         label="Wrap up the day →"
         onPress={() => router.push('/reflection')}
@@ -165,8 +189,8 @@ const styles = StyleSheet.create({
   focusWhen: {
     ...theme.typography.caption,
   },
-  toolCard: {
-    gap: theme.spacing.md,
+  actions: {
+    marginTop: theme.spacing.md,
   },
   sectionLabel: {
     ...theme.typography.subheading,
@@ -174,6 +198,19 @@ const styles = StyleSheet.create({
   },
   loading: {
     ...theme.typography.caption,
+  },
+  reflections: {
+    gap: theme.spacing.md,
+  },
+  reflectionCard: {
+    gap: theme.spacing.xs,
+    padding: theme.spacing.lg,
+  },
+  reflectionPriority: {
+    ...theme.typography.label,
+  },
+  reflectionNote: {
+    ...theme.typography.body,
   },
   wrapUp: {
     marginTop: theme.spacing.md,

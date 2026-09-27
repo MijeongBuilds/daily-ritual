@@ -8,10 +8,33 @@ import React, {
 /**
  * Shared state for the morning ritual flow.
  *
- * The four guided steps (Intention -> Priority -> Protect It -> Confirm) all
- * read and write this single piece of state so the user's choices persist as
- * they move forward and back through the flow.
+ * The three guided steps (Intention -> Priority -> Protect It) all read and
+ * write this single piece of state so the user's choices persist as they move
+ * forward and back through the flow, and the Today home reads from it too.
  */
+
+/**
+ * How the priority's protected time is chosen on the Protect It screen. The
+ * two modes are mutually exclusive:
+ *
+ * - `new-block`: the user placed a brand-new focus block on the timeline
+ *   (see {@link RitualState.placedSlotStart}).
+ * - `existing-event`: the user tapped an existing calendar event (a meeting
+ *   or an already-scheduled focus block) and designated THAT event as today's
+ *   protected top-priority time — no new block is created.
+ */
+export type ProtectMode = 'new-block' | 'existing-event';
+
+/** A reflection note the user saved when a task was not accomplished. */
+export interface ReflectionNote {
+  /** The priority the note was about. */
+  priorityTitle: string;
+  /** Free-form note: "what will you do with this?". */
+  note: string;
+  /** When the note was captured (ms since epoch). */
+  createdAt: number;
+}
+
 export interface RitualState {
   /** Free-form intention for the day (optional). */
   intention: string;
@@ -20,25 +43,37 @@ export interface RitualState {
   /** Duration of the focus block in minutes. Defaults to 50. */
   durationMinutes: number;
   /**
-   * Start time of the slot the user placed the priority into, or `null` if no
-   * slot has been chosen yet.
+   * Start time of the new focus block the user placed on the timeline, or
+   * `null` if none. Only meaningful when {@link protectMode} is `new-block`.
    */
   placedSlotStart: Date | null;
   /**
-   * Count of completed 25-minute pomodoros the user has run against the top
-   * priority on the Today home. Independent of {@link markedDone}.
+   * The existing calendar event the user designated as their protected time,
+   * or `null`. Only meaningful when {@link protectMode} is `existing-event`.
    */
-  pomodoroCount: number;
+  existingEventId: string | null;
+  /** Start time of the chosen existing event (for display). */
+  existingEventStart: Date | null;
+  /** End time of the chosen existing event (for display). */
+  existingEventEnd: Date | null;
+  /**
+   * Which protection mode is active, or `null` if nothing is protected yet.
+   * Kept in sync so the two modes are always mutually exclusive.
+   */
+  protectMode: ProtectMode | null;
   /**
    * Whether the user has explicitly marked the top priority as done on the
-   * Today home. Independent of the pomodoro timer.
+   * Today home.
    */
   markedDone: boolean;
   /**
-   * Optional minutes the user recorded when marking the priority done, or
-   * `null` if they did not enter a value.
+   * Optional minutes the user recorded as the actual time the priority took,
+   * or `null` if they did not enter a value. Set either from the "Done"
+   * popup or when the timer is stopped after accomplishing the task.
    */
   timeSpentMinutes: number | null;
+  /** Reflection notes captured when a task was not accomplished. */
+  reflections: ReflectionNote[];
 }
 
 /** The default state when the ritual begins. */
@@ -47,18 +82,24 @@ export const initialRitualState: RitualState = {
   priorityTitle: '',
   durationMinutes: 50,
   placedSlotStart: null,
-  pomodoroCount: 0,
+  existingEventId: null,
+  existingEventStart: null,
+  existingEventEnd: null,
+  protectMode: null,
   markedDone: false,
   timeSpentMinutes: null,
+  reflections: [],
 };
 
 type RitualAction =
   | { type: 'setIntention'; value: string }
   | { type: 'setPriorityTitle'; value: string }
   | { type: 'setDurationMinutes'; value: number }
-  | { type: 'setPlacedSlotStart'; value: Date | null }
-  | { type: 'incrementPomodoro' }
+  | { type: 'placeNewBlock'; start: Date | null }
+  | { type: 'useExistingEvent'; id: string; start: Date; end: Date }
+  | { type: 'clearProtection' }
   | { type: 'setMarkedDone'; done: boolean; minutes: number | null }
+  | { type: 'addReflection'; note: ReflectionNote }
   | { type: 'reset' };
 
 function ritualReducer(
@@ -72,16 +113,51 @@ function ritualReducer(
       return { ...state, priorityTitle: action.value };
     case 'setDurationMinutes':
       return { ...state, durationMinutes: action.value };
-    case 'setPlacedSlotStart':
-      return { ...state, placedSlotStart: action.value };
-    case 'incrementPomodoro':
-      return { ...state, pomodoroCount: state.pomodoroCount + 1 };
+    case 'placeNewBlock':
+      // Placing a new block is mutually exclusive with choosing an event.
+      if (action.start == null) {
+        return {
+          ...state,
+          placedSlotStart: null,
+          protectMode:
+            state.protectMode === 'new-block' ? null : state.protectMode,
+        };
+      }
+      return {
+        ...state,
+        placedSlotStart: action.start,
+        protectMode: 'new-block',
+        existingEventId: null,
+        existingEventStart: null,
+        existingEventEnd: null,
+      };
+    case 'useExistingEvent':
+      // Choosing an existing event clears any new-block placement.
+      return {
+        ...state,
+        existingEventId: action.id,
+        existingEventStart: action.start,
+        existingEventEnd: action.end,
+        protectMode: 'existing-event',
+        placedSlotStart: null,
+      };
+    case 'clearProtection':
+      return {
+        ...state,
+        placedSlotStart: null,
+        existingEventId: null,
+        existingEventStart: null,
+        existingEventEnd: null,
+        protectMode: null,
+      };
     case 'setMarkedDone':
       return {
         ...state,
         markedDone: action.done,
         timeSpentMinutes: action.done ? action.minutes : null,
       };
+    case 'addReflection':
+      return { ...state, reflections: [...state.reflections, action.note] };
     case 'reset':
       return initialRitualState;
     default:
@@ -93,11 +169,16 @@ export interface RitualContextValue extends RitualState {
   setIntention: (value: string) => void;
   setPriorityTitle: (value: string) => void;
   setDurationMinutes: (value: number) => void;
-  setPlacedSlotStart: (value: Date | null) => void;
-  /** Record one completed pomodoro against the top priority. */
-  incrementPomodoro: () => void;
+  /** Place (or clear, with `null`) a new focus block at the given start. */
+  placeNewBlock: (start: Date | null) => void;
+  /** Designate an existing calendar event as the protected time. */
+  protectExistingEvent: (id: string, start: Date, end: Date) => void;
+  /** Clear whichever protection is active (nothing selected). */
+  clearProtection: () => void;
   /** Mark (or unmark) the priority done, with optional minutes spent. */
   setMarkedDone: (done: boolean, minutes: number | null) => void;
+  /** Save a reflection note (task not accomplished). */
+  addReflection: (note: ReflectionNote) => void;
   reset: () => void;
 }
 
@@ -118,11 +199,13 @@ export function RitualProvider({
         dispatch({ type: 'setPriorityTitle', value: v }),
       setDurationMinutes: (v) =>
         dispatch({ type: 'setDurationMinutes', value: v }),
-      setPlacedSlotStart: (v) =>
-        dispatch({ type: 'setPlacedSlotStart', value: v }),
-      incrementPomodoro: () => dispatch({ type: 'incrementPomodoro' }),
+      placeNewBlock: (start) => dispatch({ type: 'placeNewBlock', start }),
+      protectExistingEvent: (id, start, end) =>
+        dispatch({ type: 'useExistingEvent', id, start, end }),
+      clearProtection: () => dispatch({ type: 'clearProtection' }),
       setMarkedDone: (done, minutes) =>
         dispatch({ type: 'setMarkedDone', done, minutes }),
+      addReflection: (note) => dispatch({ type: 'addReflection', note }),
       reset: () => dispatch({ type: 'reset' }),
     }),
     [state],

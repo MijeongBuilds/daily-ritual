@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   InputAccessoryView,
   Keyboard,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -17,8 +18,11 @@ import {
   DAY_START_HOUR,
   DayCalendar,
 } from '../components/DayCalendar';
+import { formatTimeRange } from '../components/formatTime';
+import { PrimaryButton } from '../components/PrimaryButton';
 import { PriorityChip } from '../components/PriorityChip';
 import { ScreenScaffold } from '../components/ScreenScaffold';
+import { SecondaryButton } from '../components/SecondaryButton';
 import { TextField } from '../components/TextField';
 import { findFreeGaps } from '../services/calendar/findFreeGaps';
 import { mockCalendarService } from '../services/calendar/MockCalendarService';
@@ -43,17 +47,27 @@ function dayBounds(day: Date): { start: Date; end: Date } {
 export default function ProtectScreen(): React.ReactElement {
   const router = useRouter();
   const {
+    intention,
     priorityTitle,
     durationMinutes,
     setDurationMinutes,
     placedSlotStart,
-    setPlacedSlotStart,
+    protectMode,
+    existingEventId,
+    existingEventStart,
+    existingEventEnd,
+    placeNewBlock,
+    protectExistingEvent,
+    clearProtection,
   } = useRitual();
 
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
   // Local text buffer so the numeric field can be edited freely.
   const [durationText, setDurationText] = useState(String(durationMinutes));
+  // The event the user tapped, pending confirmation in the "use this?" modal.
+  const [pendingEvent, setPendingEvent] = useState<CalendarEvent | null>(null);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -92,14 +106,20 @@ export default function ProtectScreen(): React.ReactElement {
   }, [events, effectiveDuration, loading, day]);
 
   const noFit = !loading && fittingGaps.length === 0;
+  // Something is protected once EITHER a new block is placed OR an existing
+  // event has been chosen.
+  const hasProtection = protectMode != null;
 
   function handleDurationChange(text: string): void {
     const cleaned = text.replace(/[^0-9]/g, '');
     setDurationText(cleaned);
     const parsed = parseInt(cleaned, 10);
     setDurationMinutes(Number.isNaN(parsed) ? 0 : parsed);
-    // A new duration invalidates the previously placed slot.
-    setPlacedSlotStart(null);
+    // A new duration invalidates a previously placed NEW block (but not a
+    // chosen existing event, whose time is fixed by the event itself).
+    if (protectMode === 'new-block') {
+      placeNewBlock(null);
+    }
   }
 
   function handlePlaceSlot(start: Date): void {
@@ -107,12 +127,56 @@ export default function ProtectScreen(): React.ReactElement {
     // keyboard away so the calendar is fully visible.
     Keyboard.dismiss();
     // If the field was left blank/zero, commit the effective (default)
-    // duration so the placed block and the Confirm preview stay consistent.
+    // duration so the placed block stays consistent.
     if (durationMinutes !== effectiveDuration) {
       setDurationMinutes(effectiveDuration);
       setDurationText(String(effectiveDuration));
     }
-    setPlacedSlotStart(start);
+    placeNewBlock(start);
+  }
+
+  function handleClearPlaced(): void {
+    clearProtection();
+  }
+
+  function handleSelectEvent(event: CalendarEvent): void {
+    Keyboard.dismiss();
+    setPendingEvent(event);
+  }
+
+  function confirmUseEvent(): void {
+    if (pendingEvent != null) {
+      protectExistingEvent(
+        pendingEvent.id,
+        pendingEvent.start,
+        pendingEvent.end,
+      );
+    }
+    setPendingEvent(null);
+  }
+
+  async function handleSaveAndContinue(): Promise<void> {
+    setSaving(true);
+    try {
+      // Only a brand-new block writes to the calendar. Choosing an existing
+      // event just records which event is the priority's protected time —
+      // nothing new is created.
+      if (protectMode === 'new-block' && placedSlotStart != null) {
+        const end = new Date(
+          placedSlotStart.getTime() + effectiveDuration * 60_000,
+        );
+        await mockCalendarService.saveFocusBlock({
+          title: priorityTitle,
+          start: placedSlotStart,
+          end,
+        });
+      }
+      // The ritual is set — go straight to the Today home (no separate
+      // confirm screen).
+      router.replace('/today');
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -121,10 +185,11 @@ export default function ProtectScreen(): React.ReactElement {
       totalSteps={TOTAL_STEPS}
       scroll={false}
       bottomBar={{
-        continueLabel: 'Save & continue',
-        onContinue: () => router.push('/confirm'),
+        continueLabel: 'Protect it',
+        onContinue: () => void handleSaveAndContinue(),
         onBack: () => router.back(),
-        continueDisabled: placedSlotStart == null,
+        continueDisabled: !hasProtection,
+        continueLoading: saving,
       }}
     >
       <Pressable
@@ -132,8 +197,18 @@ export default function ProtectScreen(): React.ReactElement {
         onPress={Keyboard.dismiss}
         accessibilityRole="none"
       >
+        {/* Today's intention on top … */}
+        {intention.trim().length > 0 && (
+          <View style={styles.intentionBlock}>
+            <Text style={styles.intentionLabel}>TODAY&apos;S INTENTION</Text>
+            <Text style={styles.intentionText}>{intention}</Text>
+          </View>
+        )}
+
+        {/* … then the ONE priority … */}
         <PriorityChip title={priorityTitle} />
 
+        {/* … then the minutes input + calendar. */}
         <View style={styles.durationRow}>
           <View style={styles.durationLabelWrap}>
             <Text style={styles.durationLabel}>Focus for</Text>
@@ -159,24 +234,31 @@ export default function ProtectScreen(): React.ReactElement {
           </View>
         </View>
 
-        {durationIsBlank && !loading && (
+        {protectMode === 'existing-event' &&
+        existingEventStart != null &&
+        existingEventEnd != null ? (
+          <Text style={styles.helper}>
+            Using an existing event as your protected time (
+            {formatTimeRange(existingEventStart, existingEventEnd)}). Tap it
+            again on the calendar to change, or place a new block instead.
+          </Text>
+        ) : durationIsBlank && !loading ? (
           <Text style={styles.helper}>
             Enter a number of minutes to protect (defaulting to{' '}
             {DEFAULT_DURATION}).
           </Text>
-        )}
-        {!durationIsBlank && noFit && (
+        ) : !durationIsBlank && noFit ? (
           <Text style={styles.noFit}>
-            Your day&apos;s full — shorten the block, move something, or tap the
-            timeline to protect it anyway.
+            Your day&apos;s full — shorten the block, tap the timeline to
+            protect it anyway, or tap an existing event to use it.
           </Text>
-        )}
-        {!durationIsBlank && !noFit && !loading && (
+        ) : !durationIsBlank && !loading ? (
           <Text style={styles.helper}>
-            Tap a highlighted slot, or tap anywhere on the timeline to place
-            your block. Overlap is okay — it&apos;s your call.
+            Tap a highlighted slot where you want to start, tap the timeline to
+            place a block, or tap an existing event to use it. Tap your block
+            again to remove it.
           </Text>
-        )}
+        ) : null}
       </Pressable>
 
       <ScrollView
@@ -191,15 +273,53 @@ export default function ProtectScreen(): React.ReactElement {
         ) : (
           <DayCalendar
             events={events}
-            fittingGaps={fittingGaps}
+            fittingGaps={protectMode === 'existing-event' ? [] : fittingGaps}
             day={day}
             placedStart={placedSlotStart}
             placedDurationMinutes={effectiveDuration}
             priorityTitle={priorityTitle}
+            selectedEventId={existingEventId}
             onPlaceSlot={handlePlaceSlot}
+            onClearPlaced={handleClearPlaced}
+            onSelectEvent={handleSelectEvent}
           />
         )}
       </ScrollView>
+
+      {/* Confirm using an existing event as the protected time. */}
+      <Modal
+        visible={pendingEvent != null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPendingEvent(null)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Use this as your focus?</Text>
+            {pendingEvent != null && (
+              <>
+                <Text style={styles.modalEvent}>{pendingEvent.title}</Text>
+                <Text style={styles.modalWhen}>
+                  {formatTimeRange(pendingEvent.start, pendingEvent.end)}
+                </Text>
+              </>
+            )}
+            <Text style={styles.modalBody}>
+              This existing event becomes your top priority&apos;s protected
+              time. No new focus block is created.
+            </Text>
+            <PrimaryButton
+              label="Use this event"
+              onPress={confirmUseEvent}
+              style={styles.modalPrimary}
+            />
+            <SecondaryButton
+              label="Cancel"
+              onPress={() => setPendingEvent(null)}
+            />
+          </View>
+        </View>
+      </Modal>
 
       {/*
         The number pad has no return key, so give iOS a "Done" accessory bar
@@ -228,6 +348,15 @@ const styles = StyleSheet.create({
   pinned: {
     gap: theme.spacing.md,
     marginBottom: theme.spacing.md,
+  },
+  intentionBlock: {
+    gap: theme.spacing.xs,
+  },
+  intentionLabel: {
+    ...theme.typography.label,
+  },
+  intentionText: {
+    ...theme.typography.body,
   },
   durationRow: {
     flexDirection: 'row',
@@ -272,6 +401,38 @@ const styles = StyleSheet.create({
   },
   calendarContent: {
     paddingVertical: theme.spacing.sm,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: theme.colors.overlay,
+    justifyContent: 'center',
+    paddingHorizontal: theme.spacing.xl,
+  },
+  modalCard: {
+    backgroundColor: theme.colors.card,
+    borderRadius: theme.radii.card,
+    padding: theme.spacing.xl,
+    gap: theme.spacing.sm,
+    ...theme.shadows.card,
+  },
+  modalTitle: {
+    ...theme.typography.heading,
+  },
+  modalEvent: {
+    ...theme.typography.subheading,
+    marginTop: theme.spacing.xs,
+  },
+  modalWhen: {
+    ...theme.typography.caption,
+  },
+  modalBody: {
+    ...theme.typography.body,
+    color: theme.colors.textMuted,
+    marginTop: theme.spacing.xs,
+    marginBottom: theme.spacing.sm,
+  },
+  modalPrimary: {
+    alignSelf: 'stretch',
   },
   accessory: {
     flexDirection: 'row',
