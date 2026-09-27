@@ -69,9 +69,17 @@ export interface RitualState {
   /**
    * Optional minutes the user recorded as the actual time the priority took,
    * or `null` if they did not enter a value. Set either from the "Done"
-   * popup or when the timer is stopped after accomplishing the task.
+   * popup or whenever the timer is stopped (time is logged regardless of
+   * whether the task was accomplished).
    */
   timeSpentMinutes: number | null;
+  /**
+   * Total focus seconds accrued for the priority across timer sessions. The
+   * count-up timer seeds itself from this so re-entering it CONTINUES from the
+   * previously-accumulated time rather than restarting at 0:00. Stopping the
+   * timer writes the new total back here.
+   */
+  accumulatedFocusSeconds: number;
   /** Reflection notes captured when a task was not accomplished. */
   reflections: ReflectionNote[];
 }
@@ -88,6 +96,7 @@ export const initialRitualState: RitualState = {
   protectMode: null,
   markedDone: false,
   timeSpentMinutes: null,
+  accumulatedFocusSeconds: 0,
   reflections: [],
 };
 
@@ -99,6 +108,7 @@ type RitualAction =
   | { type: 'useExistingEvent'; id: string; start: Date; end: Date }
   | { type: 'clearProtection' }
   | { type: 'setMarkedDone'; done: boolean; minutes: number | null }
+  | { type: 'saveFocusTime'; totalSeconds: number }
   | { type: 'addReflection'; note: ReflectionNote }
   | { type: 'reset' };
 
@@ -150,11 +160,35 @@ function ritualReducer(
         existingEventEnd: null,
         protectMode: null,
       };
-    case 'setMarkedDone':
+    case 'setMarkedDone': {
+      if (!action.done) {
+        // Unchecking clears the done state. Keep any accumulated focus time
+        // (the user still spent it) so a resumed timer continues from it.
+        return { ...state, markedDone: false };
+      }
+      // Marking done. A non-null minutes value (typed in the popup) overrides
+      // the logged time and keeps the accumulated focus total in sync so a
+      // resumed timer continues from it. A null value means "no explicit time"
+      // — keep whatever was already logged (e.g. from the timer on Stop).
+      if (action.minutes != null && action.minutes > 0) {
+        return {
+          ...state,
+          markedDone: true,
+          timeSpentMinutes: action.minutes,
+          accumulatedFocusSeconds: action.minutes * 60,
+        };
+      }
+      return { ...state, markedDone: true };
+    }
+    case 'saveFocusTime':
+      // Always record the timer's time — this is the source of truth for
+      // resume, and it also surfaces as time spent on the priority card.
       return {
         ...state,
-        markedDone: action.done,
-        timeSpentMinutes: action.done ? action.minutes : null,
+        accumulatedFocusSeconds: Math.max(Math.floor(action.totalSeconds), 0),
+        timeSpentMinutes: Math.round(
+          Math.max(Math.floor(action.totalSeconds), 0) / 60,
+        ),
       };
     case 'addReflection':
       return { ...state, reflections: [...state.reflections, action.note] };
@@ -177,6 +211,12 @@ export interface RitualContextValue extends RitualState {
   clearProtection: () => void;
   /** Mark (or unmark) the priority done, with optional minutes spent. */
   setMarkedDone: (done: boolean, minutes: number | null) => void;
+  /**
+   * Persist the total focus seconds from the timer. Called on Stop so the
+   * time is always logged (whether or not the task was accomplished) and so
+   * re-entering the timer resumes from this total.
+   */
+  saveFocusTime: (totalSeconds: number) => void;
   /** Save a reflection note (task not accomplished). */
   addReflection: (note: ReflectionNote) => void;
   reset: () => void;
@@ -205,6 +245,8 @@ export function RitualProvider({
       clearProtection: () => dispatch({ type: 'clearProtection' }),
       setMarkedDone: (done, minutes) =>
         dispatch({ type: 'setMarkedDone', done, minutes }),
+      saveFocusTime: (totalSeconds) =>
+        dispatch({ type: 'saveFocusTime', totalSeconds }),
       addReflection: (note) => dispatch({ type: 'addReflection', note }),
       reset: () => dispatch({ type: 'reset' }),
     }),

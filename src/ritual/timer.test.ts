@@ -4,6 +4,7 @@ import {
   formatElapsed,
   formatGoal,
   goalProgress,
+  resumeElapsed,
 } from './timer';
 
 describe('clampElapsed', () => {
@@ -53,6 +54,29 @@ describe('formatGoal', () => {
   it('shows the aimed-for minutes', () => {
     expect(formatGoal(60)).toBe('Goal: 60 min');
     expect(formatGoal(90)).toBe('Goal: 90 min');
+  });
+});
+
+describe('resumeElapsed', () => {
+  it('continues from a prior accumulated base', () => {
+    // Prior 12:00 (720s), then 1:05 (65s) more -> 13:05 (785s).
+    expect(resumeElapsed(720, 65)).toBe(785);
+  });
+
+  it('equals the base when the live segment is zero', () => {
+    expect(resumeElapsed(720, 0)).toBe(720);
+  });
+
+  it('starts from zero when there is no prior time', () => {
+    expect(resumeElapsed(0, 42)).toBe(42);
+  });
+
+  it('floors fractional seconds in both inputs', () => {
+    expect(resumeElapsed(10.9, 5.9)).toBe(15);
+  });
+
+  it('never returns a negative total', () => {
+    expect(resumeElapsed(-100, -5)).toBe(0);
   });
 });
 

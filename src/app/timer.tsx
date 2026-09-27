@@ -21,7 +21,6 @@ import { SecondaryButton } from '../components/SecondaryButton';
 import { TextField } from '../components/TextField';
 import {
   clampElapsed,
-  elapsedToMinutes,
   formatElapsed,
   formatGoal,
 } from '../ritual/timer';
@@ -34,9 +33,14 @@ import theme from '../theme/theme';
  * (the minutes set for the task) is shown for reference only — we don't score
  * over/under, we just log the actual time taken.
  *
- * Controls: Pause (pauses the count-up) and Stop. On Stop the user says
- * whether they accomplished the task: YES logs the elapsed minutes as the
- * time spent; NO captures a reflection note so nothing is lost.
+ * It also RESUMES from the previously-accumulated focus time (persisted in
+ * ritual state), so re-entering the timer continues from where it left off
+ * rather than restarting at 0:00.
+ *
+ * Controls: Pause (pauses the count-up) and Stop. On Stop the elapsed time is
+ * ALWAYS saved to the priority's time-spent total — whether or not the task is
+ * finished. The user then says whether they accomplished the task: YES marks
+ * the priority done; NO optionally captures a reflection note.
  */
 export default function TimerScreen(): React.ReactElement {
   const router = useRouter();
@@ -44,14 +48,18 @@ export default function TimerScreen(): React.ReactElement {
   const {
     priorityTitle,
     durationMinutes,
+    accumulatedFocusSeconds,
     setMarkedDone,
+    saveFocusTime,
     addReflection,
   } = useRitual();
 
   const [running, setRunning] = useState(true);
-  const [elapsed, setElapsed] = useState(0);
-  // Accumulated seconds from previous run segments (before the current one).
-  const accumulatedRef = useRef(0);
+  const [elapsed, setElapsed] = useState(accumulatedFocusSeconds);
+  // Accumulated seconds carried over from previous timer sessions plus any
+  // completed segments in this session (before the current running one). Seeded
+  // from persisted state so re-entering the timer CONTINUES from prior time.
+  const accumulatedRef = useRef(accumulatedFocusSeconds);
   // Wall-clock timestamp (ms) when the current run segment started. Seeded on
   // mount (not in the initializer) so render stays pure.
   const segmentStartRef = useRef<number | null>(null);
@@ -117,21 +125,27 @@ export default function TimerScreen(): React.ReactElement {
   }
 
   function handleStop(): void {
-    // Freeze the elapsed time and ask whether the task was accomplished.
+    // Freeze the elapsed time and ALWAYS save it — the time counts whether or
+    // not the task ends up finished, and it lets a later session resume from
+    // this total. Then ask whether the task was accomplished.
     accumulatedRef.current = currentElapsed();
     segmentStartRef.current = null;
     setElapsed(accumulatedRef.current);
     setRunning(false);
+    saveFocusTime(accumulatedRef.current);
     setStopPrompt(true);
   }
 
   function handleAccomplished(): void {
+    // Time was already saved on Stop; just mark the priority done, preserving
+    // the logged minutes.
     setStopPrompt(false);
-    setMarkedDone(true, elapsedToMinutes(accumulatedRef.current));
+    setMarkedDone(true, null);
     router.replace('/today');
   }
 
   function handleNotAccomplished(): void {
+    // Time is already saved; capturing a note is optional.
     setStopPrompt(false);
     setNotePrompt(true);
   }

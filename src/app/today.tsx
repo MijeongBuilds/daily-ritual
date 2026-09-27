@@ -18,11 +18,13 @@ import theme from '../theme/theme';
  * Layout (top → bottom):
  *   1. Today's INTENTION, prominent.
  *   2. The TOP PRIORITY.
- *   3. The timed day-view calendar with a current-time "now" line. The focus
- *      block gets two actions — a "Done" checkbox (with an optional
- *      hours/minutes popup) and a "Start" button that opens the count-up timer.
- * Any reflection notes captured from the timer are surfaced simply at the
- * bottom so nothing is lost, alongside the evening-reflection stub.
+ *   3. The timed day-view calendar with a current-time "now" line (read-only
+ *      mocked view; no drag/create/edit yet).
+ * The focus block's actions — a "Done" checkbox (with an optional
+ * hours/minutes popup) and a "Start" button that opens the count-up timer —
+ * live on the top priority card, and any optional note captured from the timer
+ * is shown on that same card, below the controls. A "Wrap up the day" button
+ * leads to the evening-reflection stub.
  */
 export default function TodayScreen(): React.ReactElement {
   const router = useRouter();
@@ -79,6 +81,17 @@ export default function TodayScreen(): React.ReactElement {
 
   const hasFocus = focusStart != null && focusEnd != null;
 
+  // Notes captured from the timer's "Not yet" path for today's priority. They
+  // now live directly on the priority card (no separate Reflections section).
+  const priorityNotes = useMemo(() => {
+    const title = priorityTitle.trim();
+    const forPriority =
+      title.length > 0
+        ? reflections.filter((r) => r.priorityTitle.trim() === title)
+        : reflections;
+    return forPriority.length > 0 ? forPriority : reflections;
+  }, [reflections, priorityTitle]);
+
   return (
     <ScrollView
       style={styles.screen}
@@ -118,6 +131,18 @@ export default function TodayScreen(): React.ReactElement {
             onStart={() => router.push('/timer')}
           />
         </View>
+
+        {/* Optional note(s) captured from the timer live on this card, below
+            the controls, so nothing is lost and there is no separate section. */}
+        {priorityNotes.length > 0 && (
+          <View style={styles.notes}>
+            {priorityNotes.map((r) => (
+              <View key={r.createdAt} style={styles.note}>
+                <Text style={styles.noteText}>{r.note}</Text>
+              </View>
+            ))}
+          </View>
+        )}
       </Card>
 
       {/* 3. Timed day-view calendar with a current-time indicator. */}
@@ -136,19 +161,6 @@ export default function TodayScreen(): React.ReactElement {
           }
           showNowIndicator
         />
-      )}
-
-      {/* Reflections captured when a task was not accomplished. */}
-      {reflections.length > 0 && (
-        <View style={styles.reflections}>
-          <Text style={styles.sectionLabel}>Reflections</Text>
-          {reflections.map((r) => (
-            <Card key={r.createdAt} style={styles.reflectionCard}>
-              <Text style={styles.reflectionPriority}>{r.priorityTitle}</Text>
-              <Text style={styles.reflectionNote}>{r.note}</Text>
-            </Card>
-          ))}
-        </View>
       )}
 
       {/* Stub entry point toward the future evening reflection. */}
@@ -199,18 +211,21 @@ const styles = StyleSheet.create({
   loading: {
     ...theme.typography.caption,
   },
-  reflections: {
-    gap: theme.spacing.md,
+  notes: {
+    marginTop: theme.spacing.md,
+    gap: theme.spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: theme.colors.border,
+    paddingTop: theme.spacing.md,
   },
-  reflectionCard: {
-    gap: theme.spacing.xs,
-    padding: theme.spacing.lg,
+  note: {
+    borderLeftWidth: 3,
+    borderLeftColor: theme.colors.accent,
+    paddingLeft: theme.spacing.md,
   },
-  reflectionPriority: {
-    ...theme.typography.label,
-  },
-  reflectionNote: {
+  noteText: {
     ...theme.typography.body,
+    color: theme.colors.textMuted,
   },
   wrapUp: {
     marginTop: theme.spacing.md,

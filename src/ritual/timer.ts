@@ -48,6 +48,19 @@ export function formatGoal(goalMinutes: number): string {
 }
 
 /**
+ * Total elapsed seconds when RESUMING a count-up timer from a prior base.
+ * The timer persists its accumulated seconds, so a later session continues
+ * from where it left off rather than restarting at 0:00. `liveSeconds` is the
+ * time counted in the current running segment; `baseSeconds` is the previously
+ * accumulated total. Both are clamped so drift or bad input can't go negative.
+ *
+ * e.g. resumeElapsed(720, 65) === 785  (prior 12:00 + 1:05 = 13:05)
+ */
+export function resumeElapsed(baseSeconds: number, liveSeconds: number): number {
+  return clampElapsed(clampElapsed(baseSeconds) + clampElapsed(liveSeconds));
+}
+
+/**
  * Progress toward the goal in the range [0, 1], used only for a reference
  * ring. Over-runs are clamped to 1 (we don't penalize going over).
  */
