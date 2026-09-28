@@ -33,3 +33,19 @@ export function formatMinutesDone(minutes: number): string {
   const mins = total % 60;
   return mins > 0 ? `${hrs} hr ${mins} min done` : `${hrs} hr done`;
 }
+
+/**
+ * Format an aggregate amount of time spent as "N min spent", switching to
+ * "H hr M min spent" once it reaches an hour (e.g. 45 -> "45 min spent",
+ * 75 -> "1 hr 15 min spent", 120 -> "2 hr spent"). Non-positive values render
+ * as "0 min spent". Used for the single aggregate figure on the priority card.
+ */
+export function formatMinutesSpent(minutes: number): string {
+  const total = Math.max(Math.round(minutes), 0);
+  if (total < 60) {
+    return `${total} min spent`;
+  }
+  const hrs = Math.floor(total / 60);
+  const mins = total % 60;
+  return mins > 0 ? `${hrs} hr ${mins} min spent` : `${hrs} hr spent`;
+}

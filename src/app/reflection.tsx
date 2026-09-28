@@ -14,11 +14,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Card } from '../components/Card';
-import {
-  formatMinutesDone,
-  formatTime,
-  formatTimeRange,
-} from '../components/formatTime';
+import { formatTime, formatTimeRange } from '../components/formatTime';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { TextField } from '../components/TextField';
 import { useRitual } from '../ritual/RitualContext';
@@ -203,7 +199,7 @@ export default function ReflectionScreen(): React.ReactElement {
                 {priorityNotes.map((r) => (
                   <View key={r.createdAt} style={styles.note}>
                     <Text style={styles.noteMeta}>
-                      {`${formatTime(new Date(r.createdAt))} \u00b7 ${formatMinutesDone(r.minutesSpentAtSave)}`}
+                      {formatTime(new Date(r.createdAt))}
                     </Text>
                     <Text style={styles.noteText}>{r.note}</Text>
                   </View>

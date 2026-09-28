@@ -1,6 +1,14 @@
 import { useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  Keyboard,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Card } from '../components/Card';
@@ -10,7 +18,7 @@ import {
   PriorityStart,
 } from '../components/FocusBlockActions';
 import {
-  formatMinutesDone,
+  formatMinutesSpent,
   formatTime,
   formatTimeRange,
 } from '../components/formatTime';
@@ -49,10 +57,31 @@ export default function TodayScreen(): React.ReactElement {
     timeSpentMinutes,
     reflections,
     setMarkedDone,
+    setPriorityTitle,
   } = useRitual();
 
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Inline editing of the priority title. While editing, the title becomes a
+  // TextInput seeded from the current value; committing writes back through
+  // setPriorityTitle so the change propagates everywhere the priority shows.
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState('');
+
+  function beginEditTitle(): void {
+    setTitleDraft(priorityTitle);
+    setEditingTitle(true);
+  }
+
+  function commitEditTitle(): void {
+    const trimmed = titleDraft.trim();
+    if (trimmed.length > 0) {
+      setPriorityTitle(trimmed);
+    }
+    setEditingTitle(false);
+    Keyboard.dismiss();
+  }
 
   useEffect(() => {
     let active = true;
@@ -122,16 +151,42 @@ export default function TodayScreen(): React.ReactElement {
         <Text style={styles.cardLabel}>YOUR ONE PRIORITY</Text>
 
         {/* The done checkbox sits inline to the LEFT of the priority title;
-            checking it opens the optional hours/minutes popup. */}
+            checking it opens the optional hours/minutes popup. The title
+            itself is inline-editable: tapping it turns it into a TextInput
+            that commits via setPriorityTitle (single source of truth). */}
         <View style={styles.titleRow}>
           <FocusBlockActions
             done={markedDone}
             timeSpentMinutes={timeSpentMinutes}
             onChangeDone={setMarkedDone}
           />
-          <Text style={styles.focusTitle}>
-            {priorityTitle.trim().length > 0 ? priorityTitle : 'Your priority'}
-          </Text>
+          {editingTitle ? (
+            <TextInput
+              value={titleDraft}
+              onChangeText={setTitleDraft}
+              onBlur={commitEditTitle}
+              onSubmitEditing={commitEditTitle}
+              placeholder="Your priority"
+              placeholderTextColor={theme.colors.textMuted}
+              returnKeyType="done"
+              autoFocus
+              style={styles.focusTitleInput}
+              accessibilityLabel="Edit priority title"
+            />
+          ) : (
+            <Pressable
+              onPress={beginEditTitle}
+              accessibilityRole="button"
+              accessibilityLabel="Edit priority title"
+              style={styles.focusTitlePress}
+            >
+              <Text style={styles.focusTitle}>
+                {priorityTitle.trim().length > 0
+                  ? priorityTitle
+                  : 'Your priority'}
+              </Text>
+            </Pressable>
+          )}
         </View>
 
         <Text style={styles.focusWhen}>
@@ -140,6 +195,14 @@ export default function TodayScreen(): React.ReactElement {
             : 'No time protected yet'}
         </Text>
 
+        {/* Single aggregate "time spent so far" figure, derived from the
+            accumulated actual time. Shown ONLY when there is time data. */}
+        {timeSpentMinutes != null && timeSpentMinutes > 0 && (
+          <Text style={styles.focusSpent}>
+            {formatMinutesSpent(timeSpentMinutes)}
+          </Text>
+        )}
+
         {/* Start remains on the top card. */}
         <View style={styles.actions}>
           <PriorityStart done={markedDone} onStart={() => router.push('/timer')} />
@@ -147,14 +210,14 @@ export default function TodayScreen(): React.ReactElement {
 
         {/* Optional note(s) captured from the timer live on this card, below
             the controls, so nothing is lost and there is no separate section.
-            Each note shows the clock time it was left and the time logged so
-            far at that moment, then the note text. */}
+            Each note shows only the clock time it was left, then the note
+            text (the aggregate time spent lives on its own line above). */}
         {priorityNotes.length > 0 && (
           <View style={styles.notes}>
             {priorityNotes.map((r) => (
               <View key={r.createdAt} style={styles.note}>
                 <Text style={styles.noteMeta}>
-                  {`${formatTime(new Date(r.createdAt))} \u00b7 ${formatMinutesDone(r.minutesSpentAtSave)}`}
+                  {formatTime(new Date(r.createdAt))}
                 </Text>
                 <Text style={styles.noteText}>{r.note}</Text>
               </View>
@@ -218,12 +281,27 @@ const styles = StyleSheet.create({
     gap: theme.spacing.md,
     marginTop: theme.spacing.xs,
   },
+  focusTitlePress: {
+    flexShrink: 1,
+  },
   focusTitle: {
     ...theme.typography.subheading,
+  },
+  focusTitleInput: {
+    ...theme.typography.subheading,
     flexShrink: 1,
+    flexGrow: 1,
+    padding: 0,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: theme.colors.border,
   },
   focusWhen: {
     ...theme.typography.caption,
+  },
+  focusSpent: {
+    ...theme.typography.caption,
+    color: theme.colors.primary,
+    fontFamily: theme.fonts.sansSemiBold,
   },
   actions: {
     marginTop: theme.spacing.md,

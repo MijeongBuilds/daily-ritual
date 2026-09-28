@@ -10,6 +10,7 @@ import {
   AppState,
   Keyboard,
   Modal,
+  Pressable,
   StyleSheet,
   Text,
   View,
@@ -39,8 +40,9 @@ import theme from '../theme/theme';
  *
  * Controls: Pause (pauses the count-up) and Stop. On Stop the elapsed time is
  * ALWAYS saved to the priority's time-spent total — whether or not the task is
- * finished. The user then says whether they accomplished the task: YES marks
- * the priority done; NO optionally captures a reflection note.
+ * finished. A SINGLE popup then handles the rest: the user picks Done / Not
+ * yet AND can, regardless of that choice, optionally leave a note for later.
+ * Confirming applies the done-state and saves any non-empty note.
  */
 export default function TimerScreen(): React.ReactElement {
   const router = useRouter();
@@ -65,8 +67,11 @@ export default function TimerScreen(): React.ReactElement {
   const segmentStartRef = useRef<number | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // A single Stop popup: it holds both the Done / Not-yet choice and an
+  // optional note box. `stopDone` tracks the current selection (defaults to
+  // "not yet" so the user must opt in to marking it done).
   const [stopPrompt, setStopPrompt] = useState(false);
-  const [notePrompt, setNotePrompt] = useState(false);
+  const [stopDone, setStopDone] = useState(false);
   const [note, setNote] = useState('');
 
   const clearTimer = useCallback((): void => {
@@ -127,31 +132,22 @@ export default function TimerScreen(): React.ReactElement {
   function handleStop(): void {
     // Freeze the elapsed time and ALWAYS save it — the time counts whether or
     // not the task ends up finished, and it lets a later session resume from
-    // this total. Then ask whether the task was accomplished.
+    // this total. Then open the SINGLE popup (Done/Not-yet + optional note).
     accumulatedRef.current = currentElapsed();
     segmentStartRef.current = null;
     setElapsed(accumulatedRef.current);
     setRunning(false);
     saveFocusTime(accumulatedRef.current);
+    setStopDone(false);
+    setNote('');
     setStopPrompt(true);
   }
 
-  function handleAccomplished(): void {
-    // Time was already saved on Stop; just mark the priority done, preserving
-    // the logged minutes.
-    setStopPrompt(false);
-    setMarkedDone(true, null);
-    router.replace('/today');
-  }
-
-  function handleNotAccomplished(): void {
-    // Time is already saved; capturing a note is optional.
-    setStopPrompt(false);
-    setNotePrompt(true);
-  }
-
-  function handleSaveNote(): void {
+  function handleConfirmStop(): void {
+    // One confirm handles everything: time is already saved on Stop; apply the
+    // Done / Not-yet selection, and save the note if the user left one.
     Keyboard.dismiss();
+    setMarkedDone(stopDone, null);
     if (note.trim().length > 0) {
       addReflection({
         priorityTitle,
@@ -162,7 +158,7 @@ export default function TimerScreen(): React.ReactElement {
         minutesSpentAtSave: Math.round(accumulatedRef.current / 60),
       });
     }
-    setNotePrompt(false);
+    setStopPrompt(false);
     router.replace('/today');
   }
 
@@ -210,7 +206,8 @@ export default function TimerScreen(): React.ReactElement {
         />
       </View>
 
-      {/* Stop → did you accomplish the task? */}
+      {/* Stop → a SINGLE popup: Done / Not-yet choice AND an optional note
+          box (available regardless of the choice). One confirm applies both. */}
       <Modal
         visible={stopPrompt}
         transparent
@@ -219,56 +216,68 @@ export default function TimerScreen(): React.ReactElement {
       >
         <View style={styles.backdrop}>
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Did you accomplish this task?</Text>
+            <Text style={styles.cardTitle}>Nice focus.</Text>
             <Text style={styles.cardBody}>
-              You focused for {formatElapsed(elapsed)}. We&apos;ll log the
+              You focused for {formatElapsed(elapsed)}. We&apos;ve logged the
               actual time — no pressure on the goal.
             </Text>
-            <PrimaryButton
-              label="Yes, it's done"
-              onPress={handleAccomplished}
-              style={styles.cardPrimary}
-            />
-            <SecondaryButton
-              label="Not yet"
-              onPress={handleNotAccomplished}
-            />
-          </View>
-        </View>
-      </Modal>
 
-      {/* Not yet → capture a reflection note. */}
-      <Modal
-        visible={notePrompt}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setNotePrompt(false)}
-      >
-        <View style={styles.backdrop}>
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>What will you do with this?</Text>
-            <Text style={styles.cardBody}>
-              Jot a quick note so it isn&apos;t lost. We&apos;ll keep it as a
-              reflection.
-            </Text>
+            {/* Done / Not-yet toggle. */}
+            <View style={styles.toggleRow}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ selected: stopDone }}
+                accessibilityLabel="Mark priority done"
+                onPress={() => setStopDone(true)}
+                style={[
+                  styles.toggleButton,
+                  stopDone ? styles.toggleDoneSelected : styles.toggleUnselected,
+                ]}
+              >
+                {stopDone && <Text style={styles.doneCheck}>✓</Text>}
+                <Text
+                  style={[
+                    styles.toggleLabel,
+                    stopDone && styles.toggleLabelOnPrimary,
+                  ]}
+                >
+                  Done
+                </Text>
+              </Pressable>
+
+              <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ selected: !stopDone }}
+                accessibilityLabel="Mark priority not yet done"
+                onPress={() => setStopDone(false)}
+                style={[
+                  styles.toggleButton,
+                  !stopDone
+                    ? styles.toggleNotYetSelected
+                    : styles.toggleUnselected,
+                ]}
+              >
+                <View style={[styles.radio, !stopDone && styles.radioSelected]}>
+                  {!stopDone && <View style={styles.radioDot} />}
+                </View>
+                <Text style={styles.toggleLabel}>Not yet</Text>
+              </Pressable>
+            </View>
+
+            {/* Optional note — available whichever choice is selected. */}
+            <Text style={styles.noteLabel}>Leave some notes for later</Text>
             <TextField
               value={note}
               onChangeText={setNote}
-              placeholder="e.g. pick this back up after lunch"
+              placeholder="e.g. pick this back up after lunch (optional)"
               multiline
               style={styles.noteInput}
             />
+
             <PrimaryButton
-              label="Save note"
-              onPress={handleSaveNote}
+              label="Done"
+              onPress={handleConfirmStop}
               style={styles.cardPrimary}
-            />
-            <SecondaryButton
-              label="Skip"
-              onPress={() => {
-                setNotePrompt(false);
-                router.replace('/today');
-              }}
             />
           </View>
         </View>
@@ -355,6 +364,70 @@ const styles = StyleSheet.create({
   },
   cardPrimary: {
     alignSelf: 'stretch',
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    gap: theme.spacing.md,
+    marginBottom: theme.spacing.sm,
+  },
+  toggleButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: theme.spacing.sm,
+    minHeight: 48,
+    borderRadius: theme.radii.button,
+    paddingHorizontal: theme.spacing.md,
+  },
+  toggleUnselected: {
+    backgroundColor: theme.colors.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.colors.border,
+  },
+  toggleDoneSelected: {
+    backgroundColor: theme.colors.primary,
+  },
+  toggleNotYetSelected: {
+    backgroundColor: theme.colors.card,
+    borderWidth: 2,
+    borderColor: theme.colors.primary,
+  },
+  toggleLabel: {
+    ...theme.typography.body,
+    fontFamily: theme.fonts.sansSemiBold,
+    color: theme.colors.text,
+  },
+  toggleLabelOnPrimary: {
+    color: theme.colors.onPrimary,
+  },
+  doneCheck: {
+    color: theme.colors.onPrimary,
+    fontFamily: theme.fonts.sansBold,
+    fontSize: theme.fontSizes.md,
+  },
+  radio: {
+    width: 18,
+    height: 18,
+    borderRadius: theme.radii.chip,
+    borderWidth: 2,
+    borderColor: theme.colors.textMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  radioSelected: {
+    borderColor: theme.colors.primary,
+  },
+  radioDot: {
+    width: 8,
+    height: 8,
+    borderRadius: theme.radii.chip,
+    backgroundColor: theme.colors.primary,
+  },
+  noteLabel: {
+    ...theme.typography.caption,
+    fontFamily: theme.fonts.sansMedium,
+    color: theme.colors.text,
   },
   noteInput: {
     minHeight: 96,
