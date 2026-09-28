@@ -5,8 +5,15 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Card } from '../components/Card';
 import { DayCalendar } from '../components/DayCalendar';
-import { FocusBlockActions } from '../components/FocusBlockActions';
-import { formatTimeRange } from '../components/formatTime';
+import {
+  FocusBlockActions,
+  PriorityStart,
+} from '../components/FocusBlockActions';
+import {
+  formatMinutesDone,
+  formatTime,
+  formatTimeRange,
+} from '../components/formatTime';
 import { SecondaryButton } from '../components/SecondaryButton';
 import { mockCalendarService } from '../services/calendar/MockCalendarService';
 import type { CalendarEvent } from '../services/calendar/types';
@@ -113,31 +120,42 @@ export default function TodayScreen(): React.ReactElement {
       {/* 2. The top priority. */}
       <Card style={styles.focusCard}>
         <Text style={styles.cardLabel}>YOUR ONE PRIORITY</Text>
-        <Text style={styles.focusTitle}>
-          {priorityTitle.trim().length > 0 ? priorityTitle : 'Your priority'}
-        </Text>
+
+        {/* The done checkbox sits inline to the LEFT of the priority title;
+            checking it opens the optional hours/minutes popup. */}
+        <View style={styles.titleRow}>
+          <FocusBlockActions
+            done={markedDone}
+            timeSpentMinutes={timeSpentMinutes}
+            onChangeDone={setMarkedDone}
+          />
+          <Text style={styles.focusTitle}>
+            {priorityTitle.trim().length > 0 ? priorityTitle : 'Your priority'}
+          </Text>
+        </View>
+
         <Text style={styles.focusWhen}>
           {hasFocus && focusStart != null && focusEnd != null
             ? formatTimeRange(focusStart, focusEnd)
             : 'No time protected yet'}
         </Text>
 
-        {/* Focus-block actions: Done checkbox (+ optional time) and Start. */}
+        {/* Start remains on the top card. */}
         <View style={styles.actions}>
-          <FocusBlockActions
-            done={markedDone}
-            timeSpentMinutes={timeSpentMinutes}
-            onChangeDone={setMarkedDone}
-            onStart={() => router.push('/timer')}
-          />
+          <PriorityStart done={markedDone} onStart={() => router.push('/timer')} />
         </View>
 
         {/* Optional note(s) captured from the timer live on this card, below
-            the controls, so nothing is lost and there is no separate section. */}
+            the controls, so nothing is lost and there is no separate section.
+            Each note shows the clock time it was left and the time logged so
+            far at that moment, then the note text. */}
         {priorityNotes.length > 0 && (
           <View style={styles.notes}>
             {priorityNotes.map((r) => (
               <View key={r.createdAt} style={styles.note}>
+                <Text style={styles.noteMeta}>
+                  {`${formatTime(new Date(r.createdAt))} \u00b7 ${formatMinutesDone(r.minutesSpentAtSave)}`}
+                </Text>
                 <Text style={styles.noteText}>{r.note}</Text>
               </View>
             ))}
@@ -194,9 +212,15 @@ const styles = StyleSheet.create({
   cardLabel: {
     ...theme.typography.label,
   },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.md,
+    marginTop: theme.spacing.xs,
+  },
   focusTitle: {
     ...theme.typography.subheading,
-    marginTop: theme.spacing.xs,
+    flexShrink: 1,
   },
   focusWhen: {
     ...theme.typography.caption,
@@ -222,6 +246,12 @@ const styles = StyleSheet.create({
     borderLeftWidth: 3,
     borderLeftColor: theme.colors.accent,
     paddingLeft: theme.spacing.md,
+    gap: theme.spacing.xs,
+  },
+  noteMeta: {
+    ...theme.typography.caption,
+    color: theme.colors.textMuted,
+    fontFamily: theme.fonts.sansMedium,
   },
   noteText: {
     ...theme.typography.body,

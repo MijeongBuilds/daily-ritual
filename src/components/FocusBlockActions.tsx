@@ -16,6 +16,11 @@ export interface FocusBlockActionsProps {
    * not enter a time.
    */
   onChangeDone: (done: boolean, minutes: number | null) => void;
+}
+
+export interface PriorityStartProps {
+  /** Whether the priority is already marked done (Start is hidden if so). */
+  done: boolean;
   /** Start the count-up focus timer. */
   onStart: () => void;
 }
@@ -32,18 +37,18 @@ function splitMinutes(total: number | null): { h: string; m: string } {
 }
 
 /**
- * The two actions offered on the focus block on the Today home:
+ * The bare "done" checkbox for the top priority, meant to sit INLINE to the
+ * LEFT of the priority title (it reads as "[ ] A"). There is no visible text
+ * label; the accessible label conveys its purpose.
  *
- * - "Done": a checkbox. Checking it opens an OPTIONAL popup to log how long
- *   the task took, in HOURS and MINUTES (the user can confirm done with no
- *   time). Unchecking clears the done state.
- * - "Start": launches the count-up focus timer screen.
+ * Checking it opens an OPTIONAL popup to log how long the task took, in HOURS
+ * and MINUTES (the user can confirm done with no time). Unchecking clears the
+ * done state.
  */
 export function FocusBlockActions({
   done,
   timeSpentMinutes,
   onChangeDone,
-  onStart,
 }: FocusBlockActionsProps): React.ReactElement {
   const [prompt, setPrompt] = useState(false);
   const [hoursText, setHoursText] = useState('');
@@ -73,46 +78,19 @@ export function FocusBlockActions({
     setPrompt(false);
   }
 
-  const hh = timeSpentMinutes != null ? Math.floor(timeSpentMinutes / 60) : 0;
-  const mm = timeSpentMinutes != null ? timeSpentMinutes % 60 : 0;
-  const spentLabel =
-    timeSpentMinutes != null
-      ? hh > 0
-        ? `${hh}h ${mm}m spent`
-        : `${mm}m spent`
-      : null;
-
   return (
-    <View style={styles.container}>
-      <View style={styles.row}>
-        <Pressable
-          accessibilityRole="checkbox"
-          accessibilityState={{ checked: done }}
-          accessibilityLabel="Mark this priority done"
-          onPress={handleToggleDone}
-          style={styles.checkRow}
-        >
-          <View style={[styles.checkbox, done && styles.checkboxChecked]}>
-            {done && <Text style={styles.checkMark}>✓</Text>}
-          </View>
-          <View style={styles.checkLabelWrap}>
-            <Text style={styles.checkLabel}>
-              {done ? 'Done for today' : 'Done'}
-            </Text>
-            {done && spentLabel != null && (
-              <Text style={styles.spent}>{spentLabel}</Text>
-            )}
-          </View>
-        </Pressable>
-
-        {!done && (
-          <PrimaryButton
-            label="Start"
-            onPress={onStart}
-            style={styles.startButton}
-          />
-        )}
-      </View>
+    <>
+      <Pressable
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: done }}
+        accessibilityLabel="Mark priority done"
+        onPress={handleToggleDone}
+        hitSlop={theme.spacing.sm}
+      >
+        <View style={[styles.checkbox, done && styles.checkboxChecked]}>
+          {done && <Text style={styles.checkMark}>✓</Text>}
+        </View>
+      </Pressable>
 
       {/* Optional hours/minutes popup shown when checking Done. */}
       <Modal
@@ -164,26 +142,32 @@ export function FocusBlockActions({
           </View>
         </View>
       </Modal>
-    </View>
+    </>
+  );
+}
+
+/**
+ * The "Start" control for the top priority card. Kept separate from the inline
+ * checkbox so the checkbox can sit next to the title while Start stays in its
+ * own row. Hidden once the priority is done.
+ */
+export function PriorityStart({
+  done,
+  onStart,
+}: PriorityStartProps): React.ReactElement | null {
+  if (done) {
+    return null;
+  }
+  return (
+    <PrimaryButton
+      label="Start"
+      onPress={onStart}
+      style={styles.startButton}
+    />
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    gap: theme.spacing.md,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: theme.spacing.md,
-  },
-  checkRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.spacing.md,
-    flexShrink: 1,
-  },
   checkbox: {
     width: 28,
     height: 28,
@@ -202,20 +186,10 @@ const styles = StyleSheet.create({
     fontFamily: theme.fonts.sansBold,
     fontSize: theme.fontSizes.md,
   },
-  checkLabelWrap: {
-    flexShrink: 1,
-  },
-  checkLabel: {
-    ...theme.typography.subheading,
-  },
-  spent: {
-    ...theme.typography.caption,
-    color: theme.colors.primary,
-    fontFamily: theme.fonts.sansMedium,
-  },
   startButton: {
     paddingVertical: theme.spacing.md,
     paddingHorizontal: theme.spacing.xl,
+    alignSelf: 'flex-start',
   },
   backdrop: {
     flex: 1,

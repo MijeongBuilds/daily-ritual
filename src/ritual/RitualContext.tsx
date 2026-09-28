@@ -33,6 +33,12 @@ export interface ReflectionNote {
   note: string;
   /** When the note was captured (ms since epoch). */
   createdAt: number;
+  /**
+   * Accumulated minutes spent on the priority at the moment the note was
+   * saved. Surfaced on the priority card as "N min done" alongside the clock
+   * time the note was left.
+   */
+  minutesSpentAtSave: number;
 }
 
 export interface RitualState {

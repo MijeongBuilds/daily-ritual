@@ -157,6 +157,9 @@ export default function TimerScreen(): React.ReactElement {
         priorityTitle,
         note: note.trim(),
         createdAt: Date.now(),
+        // Time is frozen and saved on Stop, so accumulatedRef holds the total
+        // focus seconds at this moment. Capture it as whole minutes done.
+        minutesSpentAtSave: Math.round(accumulatedRef.current / 60),
       });
     }
     setNotePrompt(false);
