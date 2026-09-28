@@ -6,7 +6,7 @@ This repository contains the first vertical slice: a centralized design-token th
 
 On **Protect It** you set the number of minutes to protect and either tap a highlighted free gap (at the exact time you want to start), tap anywhere on the timeline to place a block, or tap an **existing calendar event** to designate that event as your priority's protected time (no new block is created). Tapping your placed block again removes it. Saving lands you directly on the **Today home** (there is no separate confirm screen).
 
-The **Today home** shows your intention at the very top, then your one priority, then a standard timed day-view calendar (hour gutter on the left, events placed against the grid, a current-time "now" line). On the focus block you get two actions: a **Done** checkbox (which opens an optional hours/minutes popup to log the actual time it took) and a **Start** button that opens a **count-up focus timer**. The timer counts up from 0:00 (showing the aimed-for goal for reference), supports pause/resume and stop; on stop it asks whether you accomplished the task — "yes" logs the actual time, "not yet" captures a reflection note that is surfaced back on the Today home. A "Wrap up the day" button points to a placeholder evening-reflection screen (built next).
+The **Today home** shows your intention at the very top, then your one priority, then a standard timed day-view calendar (hour gutter on the left, events placed against the grid, a current-time "now" line). On the focus block you get two actions: a **Done** checkbox (which opens an optional hours/minutes popup to log the actual time it took) and a **Start** button that opens a **count-up focus timer**. The timer counts up from 0:00 (showing the aimed-for goal for reference), supports pause/resume and stop; on stop it asks whether you accomplished the task — "yes" logs the actual time, "not yet" captures a reflection note that is surfaced back on the Today home. A "Wrap up the day" button opens the evening **Wrap up your day** page — review whether your priority got done (a **Done / Not yet** toggle kept in sync with the Today home), re-read the notes you left during the day, and jot three optional free-text entries: the day's highlight, what you learned, and tomorrow's top priority. "Save & close the day" stores them and returns you to the Today home.
 
 ## Requirements
 
@@ -48,7 +48,9 @@ src/
                             Start (count-up timer) for the focus block
     timer.tsx               Count-up focus timer (start/pause/stop,
                             accomplished? → log time or save a note)
-    reflection.tsx          Stub for the future evening "wrap up" screen
+    reflection.tsx          Evening "Wrap up your day" page — priority
+                            Done/Not yet toggle (synced with Today), the
+                            day's notes, and three optional free-text fields
   components/               Shared UI (ScreenScaffold, RitualHeader,
                             BottomBar, Card, buttons, TextField,
                             PriorityChip, DayCalendar, FocusBlockActions)
@@ -79,8 +81,8 @@ This repository is a focused first vertical slice of the morning ritual. To keep
 - **No notifications.**
 - **Saving a focus block is simulated.** "Protect It" does not write to any real calendar; it just completes the flow and lands on the Today home. (Choosing an existing event creates nothing — it only records which event is your protected time.)
 - **Ritual state is in-memory.** The Today home reads the intention, priority, protected time, done/minutes, and any reflection notes from an in-memory context — nothing is persisted across app restarts in this slice.
-- **The evening reflection is a stub.** Reflection notes captured from the timer are surfaced simply on the Today home so nothing is lost, but the full evening reflection experience (the wrap-up ritual, a "this week" screen, reminders) is a separate build. "Wrap up the day" opens a placeholder screen only.
-- **Out of scope:** the full evening reflection experience, Google OAuth / real Google Calendar / a backend, settings, notifications, and minor / secondary priorities.
+- **The evening wrap-up is in-memory too.** The "Wrap up your day" page reviews the priority's done state, shows the notes left during the day, and captures three optional free-text entries (highlight, what you learned, tomorrow's top priority). These are stored in the same in-memory context and are not persisted across restarts. Tomorrow's top priority is kept as a carry-forward but is not yet wired into the next morning's ritual, and there is no "this week" achievements screen yet.
+- **Out of scope:** a "this week" achievements screen, seeding tomorrow's morning ritual from the wrap-up carry-forward, Google OAuth / real Google Calendar / a backend, settings, notifications, and minor / secondary priorities.
 
 ## Architecture
 

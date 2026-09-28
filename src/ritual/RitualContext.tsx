@@ -41,6 +41,21 @@ export interface ReflectionNote {
   minutesSpentAtSave: number;
 }
 
+/**
+ * The free-text entries captured on the evening "Wrap up your day" page. All
+ * three are optional. `tomorrowTopPriority` is persisted as a carry-forward
+ * for a future morning-ritual seeding, but it is not wired into tomorrow's
+ * flow yet.
+ */
+export interface WrapUp {
+  /** "Highlight of the day" — what felt meaningful today. */
+  highlight: string;
+  /** "What I learned" — a lesson, a discovery, or something to try again. */
+  learned: string;
+  /** "Tomorrow's top priority" — the one thing to make time for. */
+  tomorrowTopPriority: string;
+}
+
 export interface RitualState {
   /** Free-form intention for the day (optional). */
   intention: string;
@@ -88,6 +103,8 @@ export interface RitualState {
   accumulatedFocusSeconds: number;
   /** Reflection notes captured when a task was not accomplished. */
   reflections: ReflectionNote[];
+  /** Optional free-text entries from the evening "Wrap up your day" page. */
+  wrapUp: WrapUp;
 }
 
 /** The default state when the ritual begins. */
@@ -104,6 +121,11 @@ export const initialRitualState: RitualState = {
   timeSpentMinutes: null,
   accumulatedFocusSeconds: 0,
   reflections: [],
+  wrapUp: {
+    highlight: '',
+    learned: '',
+    tomorrowTopPriority: '',
+  },
 };
 
 type RitualAction =
@@ -116,6 +138,7 @@ type RitualAction =
   | { type: 'setMarkedDone'; done: boolean; minutes: number | null }
   | { type: 'saveFocusTime'; totalSeconds: number }
   | { type: 'addReflection'; note: ReflectionNote }
+  | { type: 'setWrapUp'; value: WrapUp }
   | { type: 'reset' };
 
 function ritualReducer(
@@ -198,6 +221,8 @@ function ritualReducer(
       };
     case 'addReflection':
       return { ...state, reflections: [...state.reflections, action.note] };
+    case 'setWrapUp':
+      return { ...state, wrapUp: action.value };
     case 'reset':
       return initialRitualState;
     default:
@@ -225,6 +250,8 @@ export interface RitualContextValue extends RitualState {
   saveFocusTime: (totalSeconds: number) => void;
   /** Save a reflection note (task not accomplished). */
   addReflection: (note: ReflectionNote) => void;
+  /** Persist the evening wrap-up free-text entries (all optional). */
+  setWrapUp: (value: WrapUp) => void;
   reset: () => void;
 }
 
@@ -254,6 +281,7 @@ export function RitualProvider({
       saveFocusTime: (totalSeconds) =>
         dispatch({ type: 'saveFocusTime', totalSeconds }),
       addReflection: (note) => dispatch({ type: 'addReflection', note }),
+      setWrapUp: (value) => dispatch({ type: 'setWrapUp', value }),
       reset: () => dispatch({ type: 'reset' }),
     }),
     [state],
