@@ -14,6 +14,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import React, { useEffect } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { GoogleAuthProvider } from '../auth/GoogleAuthContext';
 import { RitualProvider } from '../ritual/RitualContext';
 import theme from '../theme/theme';
 
@@ -42,15 +43,17 @@ export default function RootLayout(): React.ReactElement | null {
 
   return (
     <SafeAreaProvider>
-      <RitualProvider>
-        <Stack
-          screenOptions={{
-            headerShown: false,
-            contentStyle: { backgroundColor: theme.colors.background },
-            animation: 'slide_from_right',
-          }}
-        />
-      </RitualProvider>
+      <GoogleAuthProvider>
+        <RitualProvider>
+          <Stack
+            screenOptions={{
+              headerShown: false,
+              contentStyle: { backgroundColor: theme.colors.background },
+              animation: 'slide_from_right',
+            }}
+          />
+        </RitualProvider>
+      </GoogleAuthProvider>
     </SafeAreaProvider>
   );
 }
