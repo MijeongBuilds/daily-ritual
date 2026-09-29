@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Keyboard,
   Pressable,
@@ -11,6 +11,11 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useGoogleAuth } from '../auth/GoogleAuthContext';
+import {
+  CalendarConnectCTA,
+  CalendarDisconnect,
+} from '../components/CalendarConnection';
 import { Card } from '../components/Card';
 import { DayCalendar } from '../components/DayCalendar';
 import {
@@ -23,7 +28,8 @@ import {
   formatTimeRange,
 } from '../components/formatTime';
 import { SecondaryButton } from '../components/SecondaryButton';
-import { mockCalendarService } from '../services/calendar/MockCalendarService';
+import { calendarErrorMessage } from '../services/calendar/calendarErrorMessage';
+import { useCalendarService } from '../services/calendar/CalendarProvider';
 import type { CalendarEvent } from '../services/calendar/types';
 import { useRitual } from '../ritual/RitualContext';
 import theme from '../theme/theme';
@@ -60,8 +66,12 @@ export default function TodayScreen(): React.ReactElement {
     setPriorityTitle,
   } = useRitual();
 
+  const calendar = useCalendarService();
+  const { isSignedIn } = useGoogleAuth();
+
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Inline editing of the priority title. While editing, the title becomes a
   // TextInput seeded from the current value; committing writes back through
@@ -83,25 +93,43 @@ export default function TodayScreen(): React.ReactElement {
     Keyboard.dismiss();
   }
 
+  // Load today's events from the ACTIVE service (real Google events when
+  // signed in, sample data otherwise). Keyed on the service + auth state so it
+  // refetches the moment the user connects or disconnects. `reloadKey` lets the
+  // retry button re-run the same fetch after a failure.
+  const [reloadKey, setReloadKey] = useState(0);
+
+  const retry = useCallback(() => {
+    setReloadKey((k) => k + 1);
+  }, []);
+
   useEffect(() => {
     let active = true;
-    mockCalendarService
-      .getEventsForToday()
-      .then((evts) => {
+    // All state updates happen inside an async task (after an await tick), not
+    // synchronously in the effect body, per the react-hooks lint guidance for
+    // bridging an external system (the calendar fetch) into React state.
+    const load = async (): Promise<void> => {
+      setLoading(true);
+      setLoadError(null);
+      try {
+        const evts = await calendar.getEventsForToday();
         if (active) {
           setEvents(evts);
           setLoading(false);
         }
-      })
-      .catch(() => {
+      } catch (err: unknown) {
         if (active) {
+          setEvents([]);
+          setLoadError(calendarErrorMessage(err, 'load'));
           setLoading(false);
         }
-      });
+      }
+    };
+    void load();
     return () => {
       active = false;
     };
-  }, []);
+  }, [calendar, isSignedIn, reloadKey]);
 
   const now = useMemo(() => new Date(), []);
 
@@ -145,6 +173,9 @@ export default function TodayScreen(): React.ReactElement {
       <Text style={styles.heading}>
         {intention.trim().length > 0 ? intention : 'Your day, protected.'}
       </Text>
+
+      {/* Just-in-time connect prompt (only renders when signed out). */}
+      <CalendarConnectCTA message="Connect your Google Calendar to see your real day here instead of sample events." />
 
       {/* 2. The top priority. */}
       <Card style={styles.focusCard}>
@@ -230,6 +261,15 @@ export default function TodayScreen(): React.ReactElement {
       <Text style={styles.sectionLabel}>Your day</Text>
       {loading ? (
         <Text style={styles.loading}>Loading your day…</Text>
+      ) : loadError != null ? (
+        <View style={styles.errorBox}>
+          <Text style={styles.errorText}>{loadError}</Text>
+          <SecondaryButton
+            label="Try again"
+            onPress={retry}
+            style={styles.retryButton}
+          />
+        </View>
       ) : (
         <DayCalendar
           events={events}
@@ -250,6 +290,10 @@ export default function TodayScreen(): React.ReactElement {
         onPress={() => router.push('/reflection')}
         style={styles.wrapUp}
       />
+
+      {/* The only settings surface in scope: disconnect Google Calendar
+          (only renders when signed in). */}
+      <CalendarDisconnect />
     </ScrollView>
   );
 }
@@ -312,6 +356,22 @@ const styles = StyleSheet.create({
   },
   loading: {
     ...theme.typography.caption,
+  },
+  errorBox: {
+    gap: theme.spacing.sm,
+    padding: theme.spacing.lg,
+    borderRadius: theme.radii.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.card,
+  },
+  errorText: {
+    ...theme.typography.body,
+    color: theme.colors.textMuted,
+  },
+  retryButton: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 0,
   },
   notes: {
     marginTop: theme.spacing.md,

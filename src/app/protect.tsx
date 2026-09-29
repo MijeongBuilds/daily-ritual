@@ -24,8 +24,11 @@ import { PriorityChip } from '../components/PriorityChip';
 import { ScreenScaffold } from '../components/ScreenScaffold';
 import { SecondaryButton } from '../components/SecondaryButton';
 import { TextField } from '../components/TextField';
+import { CalendarConnectCTA } from '../components/CalendarConnection';
+import { useGoogleAuth } from '../auth/GoogleAuthContext';
+import { calendarErrorMessage } from '../services/calendar/calendarErrorMessage';
+import { useCalendarService } from '../services/calendar/CalendarProvider';
 import { findFreeGaps } from '../services/calendar/findFreeGaps';
-import { mockCalendarService } from '../services/calendar/MockCalendarService';
 import type { CalendarEvent, TimeGap } from '../services/calendar/types';
 import { useRitual } from '../ritual/RitualContext';
 import { TOTAL_STEPS } from '../ritual/steps';
@@ -61,33 +64,53 @@ export default function ProtectScreen(): React.ReactElement {
     clearProtection,
   } = useRitual();
 
+  const calendar = useCalendarService();
+  const { isSignedIn } = useGoogleAuth();
+
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   // Local text buffer so the numeric field can be edited freely.
   const [durationText, setDurationText] = useState(String(durationMinutes));
   // The event the user tapped, pending confirmation in the "use this?" modal.
   const [pendingEvent, setPendingEvent] = useState<CalendarEvent | null>(null);
   const [saving, setSaving] = useState(false);
+  // Surfaces a failed real-event creation so the user is not silently dropped
+  // onto the Today home without their block being written.
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  // Load today's events from the ACTIVE service (real Google events when
+  // signed in, sample data otherwise). Keyed on the service + auth state so it
+  // refetches the moment the user connects, and on `reloadKey` for retries.
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let active = true;
-    mockCalendarService
-      .getEventsForToday()
-      .then((evts) => {
+    // All state updates happen inside an async task (after an await tick), not
+    // synchronously in the effect body, per the react-hooks lint guidance for
+    // bridging an external system (the calendar fetch) into React state.
+    const load = async (): Promise<void> => {
+      setLoading(true);
+      setLoadError(null);
+      try {
+        const evts = await calendar.getEventsForToday();
         if (active) {
           setEvents(evts);
           setLoading(false);
         }
-      })
-      .catch(() => {
+      } catch (err: unknown) {
         if (active) {
+          setEvents([]);
+          setLoadError(calendarErrorMessage(err, 'load'));
           setLoading(false);
         }
-      });
+      }
+    };
+    void load();
     return () => {
       active = false;
     };
-  }, []);
+  }, [calendar, isSignedIn, reloadKey]);
 
   const day = useMemo(() => new Date(), []);
 
@@ -157,15 +180,17 @@ export default function ProtectScreen(): React.ReactElement {
 
   async function handleSaveAndContinue(): Promise<void> {
     setSaving(true);
+    setSaveError(null);
     try {
       // Only a brand-new block writes to the calendar. Choosing an existing
       // event just records which event is the priority's protected time —
-      // nothing new is created.
+      // nothing new is created. When signed in, this saveFocusBlock creates a
+      // REAL event on the user's Google Calendar for their top priority.
       if (protectMode === 'new-block' && placedSlotStart != null) {
         const end = new Date(
           placedSlotStart.getTime() + effectiveDuration * 60_000,
         );
-        await mockCalendarService.saveFocusBlock({
+        await calendar.saveFocusBlock({
           title: priorityTitle,
           start: placedSlotStart,
           end,
@@ -174,6 +199,10 @@ export default function ProtectScreen(): React.ReactElement {
       // The ritual is set — go straight to the Today home (no separate
       // confirm screen).
       router.replace('/today');
+    } catch (err: unknown) {
+      // A failed real-event write must NOT lose the user's navigation/context.
+      // Surface a friendly message and stay on this screen so they can retry.
+      setSaveError(calendarErrorMessage(err, 'save'));
     } finally {
       setSaving(false);
     }
@@ -207,6 +236,10 @@ export default function ProtectScreen(): React.ReactElement {
 
         {/* … then the ONE priority … */}
         <PriorityChip title={priorityTitle} />
+
+        {/* Just-in-time connect prompt — the natural moment, since the user is
+            about to protect real time. Only renders when signed out. */}
+        <CalendarConnectCTA message="Connect Google Calendar to see your real events and create this focus block on your actual calendar." />
 
         {/* … then the minutes input + calendar. */}
         <View style={styles.durationRow}>
@@ -270,6 +303,15 @@ export default function ProtectScreen(): React.ReactElement {
       >
         {loading ? (
           <Text style={styles.helper}>Loading your day…</Text>
+        ) : loadError != null ? (
+          <View style={styles.errorBox}>
+            <Text style={styles.errorText}>{loadError}</Text>
+            <SecondaryButton
+              label="Try again"
+              onPress={() => setReloadKey((k) => k + 1)}
+              style={styles.retryButton}
+            />
+          </View>
         ) : (
           <DayCalendar
             events={events}
@@ -285,6 +327,13 @@ export default function ProtectScreen(): React.ReactElement {
           />
         )}
       </ScrollView>
+
+      {/* A failed real-event write surfaces here; navigation is preserved. */}
+      {saveError != null && (
+        <View style={styles.saveErrorBox}>
+          <Text style={styles.saveErrorText}>{saveError}</Text>
+        </View>
+      )}
 
       {/* Confirm using an existing event as the protected time. */}
       <Modal
@@ -395,6 +444,35 @@ const styles = StyleSheet.create({
   },
   helper: {
     ...theme.typography.caption,
+  },
+  errorBox: {
+    gap: theme.spacing.sm,
+    padding: theme.spacing.lg,
+    borderRadius: theme.radii.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.card,
+  },
+  errorText: {
+    ...theme.typography.body,
+    color: theme.colors.textMuted,
+  },
+  retryButton: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 0,
+  },
+  saveErrorBox: {
+    marginTop: theme.spacing.sm,
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    borderRadius: theme.radii.button,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.colors.accent,
+  },
+  saveErrorText: {
+    ...theme.typography.caption,
+    color: theme.colors.accent,
+    fontFamily: theme.fonts.sansMedium,
   },
   calendarScroll: {
     flex: 1,

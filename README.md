@@ -11,7 +11,8 @@ The **Today home** shows your intention at the very top, then your one priority,
 ## Requirements
 
 - [Node.js](https://nodejs.org) 18+ (Node 22 recommended)
-- The **Expo Go** app on your iOS or Android phone (from the App Store / Play Store). This project targets **Expo SDK 57**, which matches the current Expo Go store release.
+- The **Expo Go** app on your iOS or Android phone (from the App Store / Play Store) for the signed-out flow. This project targets **Expo SDK 57**, which matches the current Expo Go store release.
+- To use **real Google Calendar** (read + create events), a **development build** is required — Expo Go cannot complete custom-scheme OAuth. See [Google Calendar configuration](#google-calendar-configuration).
 
 ## Getting started
 
@@ -24,25 +25,55 @@ npx expo start
 
 ## Google Calendar configuration
 
-Real Google Calendar access uses on-device Google OAuth (PKCE, no client secret in the app). You supply your own OAuth client IDs from the [Google Cloud Console](https://console.cloud.google.com/apis/credentials); nothing real is committed to this repo.
+Daily Ritual reads your **real Google Calendar** (today's events) and can create a **real event** for your top priority when you protect time — all through on-device Google OAuth (PKCE, **no client secret** in the app, no backend server). When you are signed out, the app falls back to an in-memory `MockCalendarService`, so the flow still runs with sample events. There is a just-in-time **Connect Google Calendar** button on the **Protect It** step and the **Today** home, and a **Disconnect Google Calendar** control on the Today home.
 
-1. In Google Cloud, create OAuth 2.0 client IDs for **iOS**, **Android**, and **Web** application types.
-   - iOS bundle identifier: `com.dailyritual.app`
-   - Android package name: `com.dailyritual.app` (Android clients also need your signing certificate SHA-1 fingerprint)
-2. Open `app.json` and replace the `expo.extra.googleOAuth` placeholders with your real client IDs:
+You supply your own OAuth client IDs from the [Google Cloud Console](https://console.cloud.google.com/apis/credentials); nothing real is committed to this repo (only `REPLACE_WITH_*` placeholders).
 
-   ```jsonc
-   "extra": {
-     "googleOAuth": {
-       "iosClientId": "REPLACE_WITH_IOS_CLIENT_ID.apps.googleusercontent.com",
-       "androidClientId": "REPLACE_WITH_ANDROID_CLIENT_ID.apps.googleusercontent.com",
-       "webClientId": "REPLACE_WITH_WEB_CLIENT_ID.apps.googleusercontent.com"
-     }
-   }
-   ```
+### 1. Create OAuth client IDs
 
-   These are read at runtime via `expo-constants` (`Constants.expoConfig.extra.googleOAuth`).
-3. Google sign-in **cannot** be tested in Expo Go (a custom app scheme is required). Build and run a [development build](https://docs.expo.dev/develop/development-builds/introduction/) instead: `npx expo run:ios` / `npx expo run:android`, or `eas build --profile development`. When signed out, the app falls back to the in-memory `MockCalendarService`, so the flow still runs in Expo Go.
+In **Google Cloud → APIs & Services → Credentials**, create OAuth 2.0 client IDs. Enable the **Google Calendar API** for the project first, and configure the OAuth consent screen with the `.../auth/calendar.events` scope.
+
+| Client type | Required for                         | What to enter                                                                                          |
+| ----------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| **iOS**     | Running on iOS (device / simulator)  | **Bundle ID:** `com.dailyritual.app`                                                                   |
+| **Android** | Running on Android (device/emulator) | **Package name:** `com.dailyritual.app` + the **SHA-1 fingerprint** of the keystore your dev build signs with |
+| **Web**     | Only for web / Expo web testing      | Authorized redirect URIs as needed for web                                                             |
+
+- The app's custom scheme is **`dailyritual`** (see `app.json` → `expo.scheme`); the OAuth redirect uses this scheme.
+- Get the Android **SHA-1** from the keystore your development build is signed with. For an EAS build: `eas credentials` (Android → view the build credentials). For a local debug build: `keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android`.
+
+### 2. Paste the client IDs into `app.json`
+
+Replace the `expo.extra.googleOAuth` placeholders with your real client IDs:
+
+```jsonc
+"extra": {
+  "googleOAuth": {
+    "iosClientId": "REPLACE_WITH_IOS_CLIENT_ID.apps.googleusercontent.com",
+    "androidClientId": "REPLACE_WITH_ANDROID_CLIENT_ID.apps.googleusercontent.com",
+    "webClientId": "REPLACE_WITH_WEB_CLIENT_ID.apps.googleusercontent.com"
+  }
+}
+```
+
+These are read at runtime via `expo-constants` (`Constants.expoConfig.extra.googleOAuth`), picking the platform-appropriate ID (iOS / Android / web). **Never commit real IDs** — keep the placeholders in version control.
+
+### 3. ⚠️ A DEVELOPMENT BUILD IS REQUIRED — Expo Go will not work
+
+Google sign-in uses a **custom app scheme** for the OAuth redirect. **Expo Go cannot customize the app scheme in SDK 57, so OAuth cannot complete in Expo Go.** You must build and run a [development build](https://docs.expo.dev/develop/development-builds/introduction/):
+
+```bash
+npx expo run:ios        # local iOS dev build (needs a Mac + Xcode)
+npx expo run:android    # local Android dev build (needs Android SDK)
+# or, in the cloud:
+eas build --profile development
+```
+
+Because `expo-auth-session`, `expo-crypto`, `expo-web-browser`, and `expo-secure-store` are all standard Expo SDK modules (no bespoke native code), a plain development build is enough — no custom config plugin beyond `app.json` is needed.
+
+When **signed out**, the app uses the in-memory `MockCalendarService`, so the full ritual still runs in plain Expo Go with sample events — you just won't read or write a real calendar until you connect from a development build.
+
+**Push notifications remain out of scope.**
 
 ## Scripts
 
@@ -98,17 +129,18 @@ src/
 
 This repository is a focused first vertical slice of the morning ritual. To keep it runnable on a phone today without any accounts or servers, the following are **mocked or intentionally left out**:
 
-- **Calendar is in-memory sample data.** There is no real calendar integration. A `MockCalendarService` returns a fixed set of sample events for today, hidden behind the `CalendarService` interface so a real backend can replace it later without touching the ritual screens.
-- **No Google OAuth and no backend.** Nothing signs in, and there is no server or database.
+- **Calendar is real when connected, mocked when signed out.** Connecting Google Calendar (see [Google Calendar configuration](#google-calendar-configuration)) reads your real events and writes a real event for your focus block. When signed out, a `MockCalendarService` returns a fixed set of sample events for today, hidden behind the `CalendarService` interface so screens don't care which provider is active. **Real Google sign-in needs a development build (not Expo Go).**
+- **No backend.** OAuth is on-device (PKCE, serverless); there is no server or database, and ritual state is not synced anywhere.
 - **No notifications.**
-- **Saving a focus block is simulated.** "Protect It" does not write to any real calendar; it just completes the flow and lands on the Today home. (Choosing an existing event creates nothing — it only records which event is your protected time.)
+- **Saving a focus block writes to Google Calendar only when signed in.** When signed out, "Protect It" simulates the save and lands on the Today home. (Choosing an existing event creates nothing — it only records which event is your protected time, whether real or sample.)
 - **Ritual state is in-memory.** The Today home reads the intention, priority, protected time, done/minutes, and any reflection notes from an in-memory context — nothing is persisted across app restarts in this slice.
 - **The evening wrap-up is in-memory too.** The "Wrap up your day" page reviews the priority's done state, shows the notes left during the day, and captures three optional free-text entries (highlight, what you learned, tomorrow's top priority). These are stored in the same in-memory context and are not persisted across restarts. Tomorrow's top priority is kept as a carry-forward but is not yet wired into the next morning's ritual, and there is no "this week" achievements screen yet.
-- **Out of scope:** a "this week" achievements screen, seeding tomorrow's morning ritual from the wrap-up carry-forward, Google OAuth / real Google Calendar / a backend, settings, notifications, and minor / secondary priorities.
+- **Out of scope:** a "this week" achievements screen, seeding tomorrow's morning ritual from the wrap-up carry-forward, a backend / server sync, settings beyond connect/disconnect Google Calendar, **push notifications**, and minor / secondary priorities.
 
 ## Architecture
 
-- **`CalendarService` interface.** All calendar access goes through a provider-agnostic interface (`src/services/calendar/CalendarService.ts`). The current implementation is `MockCalendarService` (in-memory sample events); a real `GoogleCalendarService` can implement the same interface later without changing the ritual flow.
+- **`CalendarService` interface + provider selection.** All calendar access goes through a provider-agnostic interface (`src/services/calendar/CalendarService.ts`). `GoogleCalendarService` (Google Calendar REST v3) and `MockCalendarService` (in-memory sample events) both implement it; a `CalendarProvider` (`useCalendarService()`) picks the real service when signed in and the mock otherwise, so the ritual screens never import a concrete service.
+- **On-device Google OAuth (serverless).** `src/auth/` holds the PKCE auth layer: `GoogleAuthContext` (sign-in/out, `getAccessToken()` with transparent refresh), token persistence in `expo-secure-store`, and pure token-expiry helpers. No client secret and no backend.
 - **Free-gap logic is pure and testable.** `findFreeGaps` is a plain function with unit tests, so the scheduling logic is verified without a device.
 - **Centralized theme tokens.** All colors, fonts, spacing, radii, and shadows live in `src/theme/theme.ts`. Nothing else in the app hardcodes these values, so the look-and-feel is adjustable in one place.
 - **Expo Router navigation.** Each file in `src/app/` is a screen; `_layout.tsx` defines the navigator and loads fonts. Non-route code (components, context, services) stays outside `src/app/`.
