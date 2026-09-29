@@ -8,9 +8,11 @@
     "userInterfaceStyle": "light",
     "scheme": "dailyritual",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.dailyritual.app"
     },
     "android": {
+      "package": "com.dailyritual.app",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -25,10 +27,19 @@
     "plugins": [
       "expo-font",
       "expo-router",
-      "expo-splash-screen"
+      "expo-splash-screen",
+      "expo-web-browser",
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "googleOAuth": {
+        "iosClientId": "REPLACE_WITH_IOS_CLIENT_ID.apps.googleusercontent.com",
+        "androidClientId": "REPLACE_WITH_ANDROID_CLIENT_ID.apps.googleusercontent.com",
+        "webClientId": "REPLACE_WITH_WEB_CLIENT_ID.apps.googleusercontent.com"
+      }
     }
   }
 }

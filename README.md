@@ -22,6 +22,28 @@ npx expo start
 
 `npx expo start` prints a QR code in the terminal. Open **Expo Go** on your phone and scan it (iOS: use the Camera app; Android: scan from within Expo Go). Your phone and computer must be on the same network. The app reloads automatically as you edit files.
 
+## Google Calendar configuration
+
+Real Google Calendar access uses on-device Google OAuth (PKCE, no client secret in the app). You supply your own OAuth client IDs from the [Google Cloud Console](https://console.cloud.google.com/apis/credentials); nothing real is committed to this repo.
+
+1. In Google Cloud, create OAuth 2.0 client IDs for **iOS**, **Android**, and **Web** application types.
+   - iOS bundle identifier: `com.dailyritual.app`
+   - Android package name: `com.dailyritual.app` (Android clients also need your signing certificate SHA-1 fingerprint)
+2. Open `app.json` and replace the `expo.extra.googleOAuth` placeholders with your real client IDs:
+
+   ```jsonc
+   "extra": {
+     "googleOAuth": {
+       "iosClientId": "REPLACE_WITH_IOS_CLIENT_ID.apps.googleusercontent.com",
+       "androidClientId": "REPLACE_WITH_ANDROID_CLIENT_ID.apps.googleusercontent.com",
+       "webClientId": "REPLACE_WITH_WEB_CLIENT_ID.apps.googleusercontent.com"
+     }
+   }
+   ```
+
+   These are read at runtime via `expo-constants` (`Constants.expoConfig.extra.googleOAuth`).
+3. Google sign-in **cannot** be tested in Expo Go (a custom app scheme is required). Build and run a [development build](https://docs.expo.dev/develop/development-builds/introduction/) instead: `npx expo run:ios` / `npx expo run:android`, or `eas build --profile development`. When signed out, the app falls back to the in-memory `MockCalendarService`, so the flow still runs in Expo Go.
+
 ## Scripts
 
 | Command             | What it does                          |
