@@ -40,6 +40,14 @@ export const CALENDAR_EVENTS_SCOPE =
  * - `prompt: 'consent'` forces the consent screen so a refresh_token is issued
  *   even on re-authorization (Google only returns it on first consent
  *   otherwise).
+ *
+ * DELIBERATE UX TRADE-OFF: `prompt: 'consent'` re-shows Google's consent screen
+ * on EVERY sign-in, which is heavier than necessary for a returning user. We
+ * accept that cost because this app is serverless (PATH B) and has nowhere to
+ * stash a refresh token server-side; guaranteeing Google returns one on each
+ * authorization is what makes the on-device silent-refresh path reliable. If a
+ * backend is added later, this can relax to `prompt: 'select_account'` (or be
+ * dropped) and the refresh token kept server-side instead. See README.
  */
 export const googleExtraParams: Record<string, string> = {
   access_type: 'offline',
@@ -70,10 +78,18 @@ export function getGoogleClientId(): string | null {
     | GoogleOAuthExtra
     | undefined;
 
+  // Only iOS and Android are supported targets for this serverless PKCE flow.
+  // A Google WEB client cannot exchange an authorization code without a client
+  // secret (which PKCE deliberately never sends), so selecting the web client
+  // on web/other platforms would silently point at a client type that can't
+  // complete sign-in. Web is out of scope anyway (SecureStore no-ops there and
+  // a native dev build is required), so we return null for the non-mobile case
+  // and let the app stay on the mock/offline path. The webClientId still lives
+  // in app.json for future web support but is intentionally not selected here.
   const clientId = Platform.select({
     ios: extra?.iosClientId,
     android: extra?.androidClientId,
-    default: extra?.webClientId,
+    default: null,
   });
 
   if (!clientId || clientId.startsWith(PLACEHOLDER_PREFIX)) {

@@ -37,9 +37,10 @@ In **Google Cloud → APIs & Services → Credentials**, create OAuth 2.0 client
 | ----------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------ |
 | **iOS**     | Running on iOS (device / simulator)  | **Bundle ID:** `com.dailyritual.app`                                                                   |
 | **Android** | Running on Android (device/emulator) | **Package name:** `com.dailyritual.app` + the **SHA-1 fingerprint** of the keystore your dev build signs with |
-| **Web**     | Only for web / Expo web testing      | Authorized redirect URIs as needed for web                                                             |
+| **Web**     | Not used by the app (out of scope)   | Left as a placeholder in `app.json`; the app never selects it (see below)                              |
 
-- The app's custom scheme is **`dailyritual`** (see `app.json` → `expo.scheme`); the OAuth redirect uses this scheme.
+- **OAuth redirect URI (important).** Google's **iOS** and **Android** OAuth client types do **not** use an app scheme like `dailyritual://` for the redirect. They require the **reversed-client-ID** redirect that Google derives from the client ID itself — for a client ID `123-abc.apps.googleusercontent.com` the redirect is `com.googleusercontent.apps.123-abc:/oauth2redirect`. The app builds exactly this value (via `makeRedirectUri({ native })`) and hands it to Google, so **you do not paste a redirect URI for iOS/Android** — creating the iOS/Android client with the correct bundle id / package (below) is enough, and Google validates the reversed-client-ID redirect automatically. (The `dailyritual` scheme in `app.json` is still the app's deep-link scheme and is needed for the dev build; it just isn't the Google OAuth redirect.)
+- **Web is out of scope.** A Google *web* client can't complete the secretless PKCE code exchange this app uses (it would need a client secret), so the app **never selects the web client** — on web/other platforms `getGoogleClientId()` returns `null` and the app stays on the mock calendar. The `webClientId` placeholder remains in `app.json` only for possible future web support.
 - Get the Android **SHA-1** from the keystore your development build is signed with. For an EAS build: `eas credentials` (Android → view the build credentials). For a local debug build: `keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android`.
 
 ### 2. Paste the client IDs into `app.json`
@@ -73,7 +74,15 @@ Because `expo-auth-session`, `expo-crypto`, `expo-web-browser`, and `expo-secure
 
 When **signed out**, the app uses the in-memory `MockCalendarService`, so the full ritual still runs in plain Expo Go with sample events — you just won't read or write a real calendar until you connect from a development build.
 
+> **Note on re-consent:** because this app is **serverless** (no backend to hold a refresh token), it requests `access_type=offline` **and** `prompt=consent` so Google reliably returns a refresh token on each authorization. The trade-off is that Google's consent screen appears on **every** sign-in, even for returning users. This is deliberate; a future server-backed model could store the refresh token server-side and drop the forced consent. See "Serverless today, server-ready later" below.
+
 **Push notifications remain out of scope.**
+
+### Serverless today, server-ready later
+
+Right now everything is **on-device and serverless** (PATH B): the phone talks directly to Google using OAuth + PKCE, tokens live only in the device's secure store, and there is **no backend and no database**. A practical consequence: because nothing is stored on a server, **you (the operator) cannot see your users or their activity** — there is no list of accounts, no server-side event log, and no analytics beyond what Google's own dashboards show. Each install is an island.
+
+If the app gets meaningful usage and you want that visibility (or shared/team features, server-side refresh, cross-device sync, or push), you can convert to a **server-backed model** later without changing the UI: the calendar access already sits behind the `CalendarService` interface, so a server could hold the OAuth refresh token, proxy the Google Calendar calls, and record users/activity. That migration is out of scope for this slice; the current design just keeps that door open.
 
 ## Scripts
 

@@ -38,6 +38,7 @@ import {
   googleDiscovery,
   googleExtraParams,
 } from './googleAuthConfig';
+import { reversedClientIdRedirect } from './googleRedirect';
 import { computeExpiresAt, isTokenExpired } from './tokenExpiry';
 import {
   deleteTokens,
@@ -50,8 +51,25 @@ import {
 // pending browser session is dismissed. Safe to call at module scope.
 WebBrowser.maybeCompleteAuthSession();
 
-/** Redirect URI for the native/dev-build scheme (matches app.json `scheme`). */
-const redirectUri = AuthSession.makeRedirectUri({ scheme: 'dailyritual' });
+/**
+ * Build the redirect URI Google will validate for this OAuth client.
+ *
+ * Google's iOS/Android OAuth client types do NOT accept an app scheme such as
+ * `dailyritual://`; they require the reversed-client-ID redirect
+ * (`com.googleusercontent.apps.<ID>:/oauth2redirect`). We derive that from the
+ * client ID and pass it through `makeRedirectUri({ native })` — the SDK-57
+ * documented option whose value "takes precedence over all other properties"
+ * and is used verbatim for native/dev builds. Falling back to the app scheme
+ * only happens when we can't reverse the client ID (i.e. unconfigured), in
+ * which case signIn() is already guarded off, so the value is never sent.
+ */
+function buildRedirectUri(clientId: string | null): string {
+  const native = reversedClientIdRedirect(clientId);
+  if (native) {
+    return AuthSession.makeRedirectUri({ native });
+  }
+  return AuthSession.makeRedirectUri({ scheme: 'dailyritual' });
+}
 
 /** Public surface of the Google auth context. */
 export interface GoogleAuthContextValue {
@@ -115,6 +133,8 @@ export function GoogleAuthProvider({
   const tokensRef = useRef<StoredTokens | null>(null);
 
   const clientId = getGoogleClientId();
+  // The Google-validated redirect (reversed client ID) for this client.
+  const redirectUri = useMemo(() => buildRedirectUri(clientId), [clientId]);
 
   const [request, response, promptAsync] = AuthSession.useAuthRequest(
     {
@@ -128,6 +148,28 @@ export function GoogleAuthProvider({
     },
     googleDiscovery,
   );
+
+  // Read request/clientId/redirectUri through refs inside the response effect
+  // so the effect can key on `response` ALONE. Otherwise a changed AuthRequest
+  // or clientId identity across renders could re-run the code exchange for a
+  // response we already consumed, and Google rejects a reused authorization
+  // code (surfacing as a spurious sign-in failure).
+  const requestRef = useRef(request);
+  const clientIdRef = useRef(clientId);
+  const redirectUriRef = useRef(redirectUri);
+  // Sync the refs in an effect (never during render): keep the latest request,
+  // clientId, and redirect available to the response effect below without
+  // making them effect dependencies.
+  useEffect(() => {
+    requestRef.current = request;
+    clientIdRef.current = clientId;
+    redirectUriRef.current = redirectUri;
+  }, [request, clientId, redirectUri]);
+
+  // Guards against exchanging the same authorization code twice: once a code is
+  // handed to exchangeCodeAsync we remember it, so a re-fired effect for the
+  // same response short-circuits instead of redeeming a spent code.
+  const consumedCodeRef = useRef<string | null>(null);
 
   const applyTokens = useCallback(async (next: StoredTokens) => {
     tokensRef.current = next;
@@ -190,21 +232,28 @@ export function GoogleAuthProvider({
       }
 
       const code = response.params.code;
-      if (!code || !request) {
+      const currentRequest = requestRef.current;
+      if (!code || !currentRequest) {
         setAuthError('Google sign-in did not return an authorization code.');
         setIsConnecting(false);
         return;
       }
 
+      // De-dup: never redeem a code we've already handed to Google.
+      if (consumedCodeRef.current === code) {
+        return;
+      }
+      consumedCodeRef.current = code;
+
       try {
         const token = await AuthSession.exchangeCodeAsync(
           {
-            clientId: clientId ?? '',
+            clientId: clientIdRef.current ?? '',
             code,
-            redirectUri,
+            redirectUri: redirectUriRef.current,
             // Complete the PKCE handshake with the verifier the request made.
-            extraParams: request.codeVerifier
-              ? { code_verifier: request.codeVerifier }
+            extraParams: currentRequest.codeVerifier
+              ? { code_verifier: currentRequest.codeVerifier }
               : undefined,
           },
           googleDiscovery,
@@ -230,7 +279,10 @@ export function GoogleAuthProvider({
     return () => {
       cancelled = true;
     };
-  }, [response, request, clientId, applyTokens]);
+    // Key on `response` alone; request/clientId/redirectUri are read via refs
+    // above so an unstable AuthRequest/clientId identity cannot re-trigger a
+    // duplicate code exchange for an already-consumed response.
+  }, [response, applyTokens]);
 
   const signIn = useCallback(async () => {
     if (!clientId) {
@@ -246,6 +298,9 @@ export function GoogleAuthProvider({
     }
     setAuthError(null);
     setIsConnecting(true);
+    // Allow the next response to exchange its (new) code even if a previous
+    // attempt consumed a different one.
+    consumedCodeRef.current = null;
     // The response is handled by the effect above; ignore the resolved value.
     await promptAsync();
   }, [clientId, request, promptAsync]);
