@@ -16,6 +16,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { GoogleAuthProvider } from '../auth/GoogleAuthContext';
 import { RitualProvider } from '../ritual/RitualContext';
+import { CalendarProvider } from '../services/calendar/CalendarProvider';
 import theme from '../theme/theme';
 
 // Keep the splash screen visible until the custom fonts are ready.
@@ -44,15 +45,17 @@ export default function RootLayout(): React.ReactElement | null {
   return (
     <SafeAreaProvider>
       <GoogleAuthProvider>
-        <RitualProvider>
-          <Stack
-            screenOptions={{
-              headerShown: false,
-              contentStyle: { backgroundColor: theme.colors.background },
-              animation: 'slide_from_right',
-            }}
-          />
-        </RitualProvider>
+        <CalendarProvider>
+          <RitualProvider>
+            <Stack
+              screenOptions={{
+                headerShown: false,
+                contentStyle: { backgroundColor: theme.colors.background },
+                animation: 'slide_from_right',
+              }}
+            />
+          </RitualProvider>
+        </CalendarProvider>
       </GoogleAuthProvider>
     </SafeAreaProvider>
   );
